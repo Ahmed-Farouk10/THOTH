@@ -1,0 +1,27 @@
+# FastAPI web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+pgvector==0.2.4
+
+# Data validation
+pydantic==2.5.2
+
+# AWS S3 storage
+boto3==1.34.0
+
+# Kafka messaging
+kafka-python==2.0.2
+
+# HTTP client
+httpx==0.25.2
+
+# Google Gemini & LangChain Magic
+# Only need embeddings from LangChain, chat uses direct API (like document service)
+langchain-google-genai==0.0.5
+langchain-core>=0.1.28,<0.2.0
+langchain-text-splitters>=0.0.1
+

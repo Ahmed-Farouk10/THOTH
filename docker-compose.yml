@@ -1,0 +1,683 @@
+# Docker Compose for Local Development
+# This file defines all services needed to run the platform locally
+
+services:
+  # API Gateway (Nginx) - Routes requests to services
+  api-gateway:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./logs/nginx:/var/log/nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - aggregator
+      - user-service
+      - document-service
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # Kafka Cluster
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # PostgreSQL Database for User Service
+  user-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: user_management
+      POSTGRES_USER: platformadmin
+      POSTGRES_PASSWORD: platformpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platformadmin -d user_management"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # User Service
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      user-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://platformadmin:platformpass@user-db:5432/user_management
+      DB_HOST: user-db
+      DB_PORT: 5432
+      DB_NAME: user_management
+      DB_USER: platformadmin
+      DB_PASSWORD: platformpass
+      JWT_SECRET: your-secret-key-change-in-production
+      SECRET_KEY: your-secret-key-change-in-production
+      SERVICE_NAME: user-service
+      LOG_LEVEL: INFO
+      KAFKA_BROKERS: kafka:9092
+    volumes:
+      - ./user-service:/app
+      - ./shared:/shared
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        sleep 5 &&
+        echo 'Installing dependencies...' &&
+        pip install --no-cache-dir -r requirements.txt &&
+        echo 'Running migrations...' &&
+        cd /app && alembic upgrade head &&
+        echo 'Starting service...' &&
+        uvicorn main:app --host 0.0.0.0 --port 8000
+      "
+
+  # Aggregator Service
+  aggregator:
+    build:
+      context: .
+      dockerfile: aggregator/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - user-service
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      USER_SERVICE_URL: http://user-service:8000
+      JWT_SECRET: your-secret-key-change-in-production
+      SERVICE_NAME: aggregator
+      LOG_LEVEL: INFO
+      AWS_REGION: us-east-1
+      S3_BUCKET_PREFIX: dev
+    volumes:
+      - ./aggregator:/app
+      - ./shared:/shared
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Installing dependencies...' &&
+        pip install --no-cache-dir -r requirements.txt &&
+        echo 'Starting aggregator...' &&
+        uvicorn main:app --host 0.0.0.0 --port 8080
+      "
+
+  # PostgreSQL Database for Document Service
+  document-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: document_reader_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - document_db_data:/var/lib/postgresql/data
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d document_reader_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Document Service API (HTTP)
+  document-service:
+    build:
+      context: .
+      dockerfile: documentreader/Dockerfile
+    container_name: document-service
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8002:8000"
+    depends_on:
+      document-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://postgres:password@document-db:5432/document_reader_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      S3_BUCKET_NAME: documents
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      S3_ENDPOINT_URL: http://localstack:4566
+      JWT_SECRET: your-secret-key-change-in-production
+      SERVICE_NAME: document-service
+      LOG_LEVEL: INFO
+    volumes:
+      - ./documentreader/src:/app/src
+      - ./shared:/shared
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Document Service Worker (Background Processing)
+  document-worker:
+    build:
+      context: .
+      dockerfile: documentreader/Dockerfile
+    container_name: document-worker
+    # Override command to run the worker script
+    # Change to src directory first so imports work correctly
+    command: sh -c "cd /app/src && python worker.py"
+    depends_on:
+      - document-service
+      - document-db
+      - kafka
+    environment:
+      DATABASE_URL: postgresql://postgres:password@document-db:5432/document_reader_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      S3_BUCKET_NAME: documents
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      S3_ENDPOINT_URL: http://localstack:4566
+      # === AI / NLP configuration ===
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_API_KEY_2: ${GROQ_API_KEY_2}
+      GROQ_API_KEY_3: ${GROQ_API_KEY_3}
+      GROQ_API_KEY_4: ${GROQ_API_KEY_4}
+      GROQ_API_KEY_5: ${GROQ_API_KEY_5}
+      GROQ_API_KEY_6: ${GROQ_API_KEY_6}
+      PRIMARY_GROQ_KEY: 5
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_MODEL: ${GOOGLE_MODEL:-models/gemini-1.5-pro}
+      GOOGLE_API_BASE: ${GOOGLE_API_BASE:-https://generativelanguage.googleapis.com/v1beta}
+      SPACY_MODEL: ${SPACY_MODEL:-en_core_web_sm}
+      NOTES_MAX_CHARS: ${NOTES_MAX_CHARS:-15000}
+      SERVICE_NAME: document-worker
+      LOG_LEVEL: INFO
+    volumes:
+      - ./documentreader/src:/app/src
+      - ./shared:/shared
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os; exit(0 if os.path.exists(\"/proc/1\") else 1)' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # PostgreSQL Database for Notification Service
+  notification-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - notification_db_data:/var/lib/postgresql/data
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d notification_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Notification Service - Kafka consumer + audit log
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    ports:
+      - "8003:8003"
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      document-worker:
+        condition: service_started  # Ensure document-worker can produce events
+    environment:
+      DATABASE_URL: postgresql://postgres:password@notification-db:5432/notification_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SECRET_KEY: your-secret-key-change-in-production
+      JWT_SECRET: your-secret-key-change-in-production
+      SERVICE_NAME: notification-service
+      LOG_LEVEL: INFO
+    volumes:
+      - ./notification-service:/app
+      - ./shared:/shared
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8003/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # PostgreSQL Database for Quiz Service
+  quiz-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: quiz_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5435:5432"
+    volumes:
+      - quiz_db_data:/var/lib/postgresql/data
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d quiz_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # PostgreSQL Database for Chat Service (WITH pgvector extension)
+  chat-db:
+    image: pgvector/pgvector:pg16
+    container_name: cloud-chat-db
+    environment:
+      POSTGRES_DB: chat_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5436:5432"
+    volumes:
+      - chat_db_data:/var/lib/postgresql/data
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chat_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Quiz Service API
+  quiz-service:
+    build:
+      context: .
+      dockerfile: platform/quiz-service/Dockerfile
+    ports:
+      - "8004:8004"
+    depends_on:
+      quiz-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      document-worker:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      S3_BUCKET_NAME: documents
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      S3_ENDPOINT_URL: http://localstack:4566
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_API_KEY_2: ${GROQ_API_KEY_2}
+      GROQ_API_KEY_3: ${GROQ_API_KEY_3}
+      GROQ_API_KEY_4: ${GROQ_API_KEY_4}
+      GROQ_API_KEY_5: ${GROQ_API_KEY_5}
+      GROQ_API_KEY_6: ${GROQ_API_KEY_6}
+      PRIMARY_GROQ_KEY: 4
+      SERVICE_NAME: quiz-service
+      LOG_LEVEL: INFO
+    volumes:
+      - ./platform/quiz-service/src:/app/src
+      - ./shared:/shared
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Quiz Service Worker
+  quiz-worker:
+    build:
+      context: .
+      dockerfile: platform/quiz-service/Dockerfile
+    container_name: quiz-worker
+    command: sh -c "cd /app/src && python worker.py"
+    depends_on:
+      quiz-service:
+        condition: service_started
+      quiz-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      localstack:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      S3_BUCKET_NAME: documents
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      S3_ENDPOINT_URL: http://localstack:4566
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_API_KEY_2: ${GROQ_API_KEY_2}
+      GROQ_API_KEY_3: ${GROQ_API_KEY_3}
+      GROQ_API_KEY_4: ${GROQ_API_KEY_4}
+      GROQ_API_KEY_5: ${GROQ_API_KEY_5}
+      GROQ_API_KEY_6: ${GROQ_API_KEY_6}
+      PRIMARY_GROQ_KEY: 4
+      SERVICE_NAME: quiz-worker
+      LOG_LEVEL: INFO
+    volumes:
+      - ./platform/quiz-service/src:/app/src
+      - ./shared:/shared
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os; exit(0 if os.path.exists(\"/proc/1\") else 1)' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Chat Service API
+  chat-service:
+    build:
+      context: .
+      dockerfile: platform/chat-service/Dockerfile
+    container_name: chat-service
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload
+    ports:
+      - "8005:8005"
+    env_file: .env
+    depends_on:
+      chat-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      localstack:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:password@chat-db:5432/chat_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      S3_BUCKET_NAME: documents
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      S3_ENDPOINT_URL: http://localstack:4566
+      CHAT_GOOGLE_API_KEY: ${CHAT_GOOGLE_API_KEY}
+      SERVICE_NAME: chat-service
+      LOG_LEVEL: INFO
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Chat Service Worker (Document Ingestion & Vectorization)
+  chat-worker:
+    build:
+      context: .
+      dockerfile: platform/chat-service/Dockerfile
+    container_name: chat-worker
+    command: python src/worker.py
+    env_file: .env
+    depends_on:
+      chat-service:
+        condition: service_started
+      chat-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      localstack:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:password@chat-db:5432/chat_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      S3_BUCKET_NAME: documents
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      S3_ENDPOINT_URL: http://localstack:4566
+      CHAT_GOOGLE_API_KEY: ${CHAT_GOOGLE_API_KEY}
+      SERVICE_NAME: chat-worker
+      LOG_LEVEL: INFO
+    volumes:
+      - ./platform/chat-service/src:/app/src
+      - ./shared:/shared
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os; exit(0 if os.path.exists(\"/proc/1\") else 1)' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # MongoDB Database for TTS Service
+  mongodb:
+    image: mongo:7.0
+    container_name: cloud-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: tts_service
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # TTS Service (Node.js)
+  tts-service:
+    build:
+      context: .
+      dockerfile: tts-service/Dockerfile
+    container_name: cloud-tts-service
+    ports:
+      - "8006:8006"
+    environment:
+      - NODE_ENV=production
+      - PORT=8006
+      - TTS_PORT=8006
+      - MONGODB_URI=mongodb://mongodb:27017/tts_service
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_CLIENT_ID=tts-service
+      - KAFKA_GROUP_ID=tts-service-group
+      # AWS/LocalStack Config
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - S3_BUCKET=documents
+      - S3_ENDPOINT=http://localstack:4566
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      localstack:
+        condition: service_healthy
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8006/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # STT Service (Node.js + Gemini 1.5 Flash)
+  stt-service:
+    build:
+      context: .
+      dockerfile: stt-service/Dockerfile
+    container_name: cloud-stt-service
+    ports:
+      - "8007:8007"
+    environment:
+      - NODE_ENV=production
+      - PORT=8007
+      - MONGODB_URI=mongodb://mongodb:27017/stt_service
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_CLIENT_ID=stt-service
+      - KAFKA_GROUP_ID=stt-service-group
+      # CRITICAL: Use the Google Key from .env (same as Chat Service)
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_API_KEY=${GOOGLE_API_KEY}
+      # AWS/LocalStack
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - S3_BUCKET=documents
+      - S3_ENDPOINT=http://localstack:4566
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      localstack:
+        condition: service_healthy
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8007/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # LocalStack - S3 Mock for Local Development
+  localstack:
+    image: localstack/localstack:3.0.2
+    container_name: cloud-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "./localstack_data:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./localstack_init:/etc/localstack/init/ready.d"
+    networks:
+      - platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Frontend Application (React + Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cloud-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8001
+      - VITE_USER_SERVICE_URL=http://localhost:8000
+      - VITE_DOCUMENT_SERVICE_URL=http://localhost:8002
+      - VITE_NOTIFICATION_SERVICE_URL=http://localhost:8003
+      - VITE_CHAT_SERVICE_URL=http://localhost:8005
+      - VITE_QUIZ_SERVICE_URL=http://localhost:8006
+      - VITE_TTS_SERVICE_URL=http://localhost:8007
+      - VITE_STT_SERVICE_URL=http://localhost:8008
+    networks:
+      - platform-network
+    depends_on:
+      - aggregator
+      - user-service
+      - tts-service
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/health || curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  user_db_data:
+  document_db_data:
+  notification_db_data:
+  quiz_db_data:
+  chat_db_data:
+  mongodb_data:
+
+networks:
+  platform-network:
+    driver: bridge

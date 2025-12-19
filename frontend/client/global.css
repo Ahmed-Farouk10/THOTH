@@ -1,0 +1,406 @@
+/** @import must precede all other statements */
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&display=swap");
+@import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Enterprise Black & Gold Theme */
+    --bg-void: #050505;
+    --bg-obsidian: #121212;
+    --bg-surface: rgba(20, 20, 20, 0.8);
+    --bg-card: rgba(18, 18, 18, 0.9);
+    
+    /* Gold Palette */
+    --gold-primary: #D4AF37;
+    --gold-light: #FFD700;
+    --gold-dark: #B8941F;
+    --gold-glow: rgba(212, 175, 55, 0.3);
+    --amber: #FFBF00;
+    
+    /* Text Colors */
+    --text-main: #E0E0E0;
+    --text-secondary: #B0B0B0;
+    --text-muted: #808080;
+    
+    /* Borders & Effects */
+    --border-gold: rgba(212, 175, 55, 0.2);
+    --border-gold-strong: rgba(212, 175, 55, 0.5);
+    --shadow-obsidian: 0 8px 32px rgba(0, 0, 0, 0.8);
+    --shadow-gold: 0 0 40px rgba(212, 175, 55, 0.4);
+    
+    /* Fonts */
+    --font-header: 'Cinzel', serif;
+    --font-body: 'Inter', sans-serif;
+    
+    /* Shadcn UI Variables (for compatibility) */
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --radius: 0.75rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--bg-void);
+    background-image: radial-gradient(circle at 50% 50%, #1a1a1a 0%, var(--bg-void) 100%);
+    color: var(--text-main);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+  
+  * {
+    box-sizing: border-box;
+  }
+
+  :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  pre,
+  code {
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-header);
+    color: var(--gold-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--bg-void);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--gold-primary);
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--gold-light);
+  }
+}
+
+@layer components {
+  /* Obsidian Glass Card */
+  .card-obsidian {
+    background: var(--bg-surface);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-gold);
+    border-radius: 12px;
+    box-shadow: var(--shadow-obsidian);
+    transition: all 0.3s ease;
+  }
+
+  .card-obsidian:hover {
+    border-color: var(--border-gold-strong);
+    box-shadow: var(--shadow-obsidian), var(--shadow-gold);
+    transform: translateY(-2px);
+  }
+
+  /* Button Styles */
+  .btn {
+    @apply px-6 py-3 border-none rounded-lg font-semibold cursor-pointer transition-all duration-300 text-base tracking-wide;
+  }
+  
+  .btn:focus {
+    outline: none;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--gold-primary) 0%, var(--gold-dark) 100%);
+    color: var(--bg-void);
+    box-shadow: 0 4px 20px var(--gold-glow);
+    @apply hover:shadow-gold hover:-translate-y-0.5;
+  }
+  
+  .btn-primary:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-void), 0 0 0 4px var(--gold-primary);
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 8px 30px var(--gold-glow);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--gold-primary);
+    border: 2px solid var(--border-gold-strong);
+    @apply hover:bg-gold-primary/10 hover:border-gold-primary;
+  }
+  
+  .btn-secondary:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-void), 0 0 0 4px var(--gold-primary);
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--text-main);
+    border: 2px solid var(--border-gold);
+    @apply hover:bg-gold-primary/10 hover:text-gold-primary;
+  }
+  
+  .btn-outline:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-void), 0 0 0 4px var(--gold-primary);
+  }
+
+  /* Text Gradients */
+  .text-gradient-gold {
+    background: linear-gradient(135deg, var(--gold-light) 0%, var(--gold-primary) 50%, var(--gold-dark) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Section Styles */
+  .section {
+    @apply py-24 px-4 sm:px-6 lg:px-8;
+  }
+
+  .section-title {
+    @apply text-center mb-16 relative;
+  }
+
+  .section-title h2 {
+    @apply text-5xl md:text-6xl font-bold mb-4;
+    font-family: var(--font-header);
+    color: var(--gold-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+  }
+
+  .section-title p {
+    @apply text-xl text-text-secondary max-w-2xl mx-auto;
+  }
+
+  /* Feature Card */
+  .feature-card {
+    @apply card-obsidian cursor-pointer p-8;
+    @apply hover:-translate-y-2;
+  }
+
+  .feature-icon {
+    @apply text-6xl mb-6 transition-transform duration-300;
+  }
+
+  .feature-card:hover .feature-icon {
+    @apply scale-110;
+    filter: drop-shadow(0 0 20px var(--gold-glow));
+  }
+
+  .feature-card h3 {
+    @apply text-2xl font-bold mb-4;
+    color: var(--gold-primary);
+    font-family: var(--font-header);
+  }
+
+  .feature-card p {
+    @apply text-text-secondary leading-relaxed;
+  }
+
+  /* Glass Morphism */
+  .glass {
+    background: rgba(20, 20, 20, 0.5);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--border-gold);
+    border-radius: 12px;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 20px var(--gold-glow);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 40px var(--gold-glow);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+/* Intro Sequence Animations */
+@keyframes fillText {
+  0% {
+    width: 0;
+  }
+  100% {
+    width: 100%;
+    border-right: none;
+  }
+}
+
+@keyframes contentFadeIn {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUpFade {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseEye {
+  from {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1.1);
+    opacity: 1;
+    filter: drop-shadow(0 0 40px var(--gold-primary));
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.6s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.8s ease-out;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Utility Classes */
+.text-shadow-gold {
+  text-shadow: 0 2px 20px var(--gold-glow);
+}
