@@ -77,6 +77,9 @@ resource "aws_eks_node_group" "main" {
   instance_types = ["t3.medium"] # Cost effective
   capacity_type  = "ON_DEMAND"
   
+  # Requirement 2.3: 50GB minimum disk size
+  disk_size = 50
+  
   tags = { Name = "cloud5-node-group" }
   
   depends_on = [

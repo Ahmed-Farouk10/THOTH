@@ -3,7 +3,7 @@
 # ============================================================================
 
 locals {
-  services = ["document-reader", "quiz-service", "chat-service", "tts-service", "stt-service"]
+  services = ["document-reader", "quiz-service", "chat-service", "tts-service", "stt-service", "shared-assets"]
 }
 
 # Get AWS account ID
