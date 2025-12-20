@@ -1,0 +1,59 @@
+apiVersion: v2
+name: cloud5-platform
+description: Complete Cloud5 Platform - Document Processing, Quiz, Chat, TTS/STT with Kafka & PostgreSQL
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+dependencies:
+  # Microservices
+  - name: document-reader
+    version: "1.0.0"
+    repository: "file://../services/document-reader"
+    condition: document-reader.enabled
+  
+  - name: quiz-service
+    version: "1.0.0"
+    repository: "file://../services/quiz-service"
+    condition: quiz-service.enabled
+  
+  - name: chat-service
+    version: "1.0.0"
+    repository: "file://../services/chat-service"
+    condition: chat-service.enabled
+  
+  - name: user-service
+    version: "1.0.0"
+    repository: "file://../services/user-service"
+    condition: user-service.enabled
+  
+  - name: aggregator
+    version: "1.0.0"
+    repository: "file://../services/aggregator"
+    condition: aggregator.enabled
+  
+  - name: notification-service
+    version: "1.0.0"
+    repository: "file://../services/notification-service"
+    condition: notification-service.enabled
+  
+  - name: tts-service
+    version: "1.0.0"
+    repository: "file://../services/tts-service"
+    condition: tts-service.enabled
+  
+  - name: stt-service
+    version: "1.0.0"
+    repository: "file://../services/stt-service"
+    condition: stt-service.enabled
+  
+  # Infrastructure
+  - name: kafka
+    version: "26.11.0"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: kafka.enabled
+  
+  - name: postgresql
+    version: "13.2.0"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled

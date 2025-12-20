@@ -1,0 +1,99 @@
+# Cloud5 Platform - Umbrella Chart Values
+# Controls all microservices and infrastructure
+
+# Global settings
+global:
+  environment: production
+  awsRegion: us-east-1
+  awsAccountId: "ACCOUNT_ID"  # Replace with actual AWS account ID
+
+# Microservices - Enable/Disable
+document-reader:
+  enabled: true
+
+quiz-service:
+  enabled: true
+
+chat-service:
+  enabled: true
+
+user-service:
+  enabled: true
+
+aggregator:
+  enabled: true
+
+notification-service:
+  enabled: true
+
+tts-service:
+  enabled: true
+
+stt-service:
+  enabled: true
+
+# Infrastructure
+kafka:
+  enabled: true
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 20Gi
+  
+  # CRITICAL: 10MB message support for document text
+  extraEnvVars:
+    - name: KAFKA_MESSAGE_MAX_BYTES
+      value: "10485760"
+    - name: KAFKA_REPLICA_FETCH_MAX_BYTES
+      value: "10485760"
+    - name: KAFKA_MAX_REQUEST_SIZE
+      value: "10485760"
+  
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  
+  zookeeper:
+    enabled: true
+    replicaCount: 3
+    persistence:
+      enabled: true
+      size: 8Gi
+
+postgresql:
+  enabled: true
+  auth:
+    username: postgres
+    password: "CHANGE_ME_IN_PRODUCTION"  # Use secrets in production
+    database: postgres
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 50Gi
+    
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+    
+    # Initialize databases for each service
+    initdb:
+      scripts:
+        init-databases.sql: |
+          -- Create databases for each service
+          CREATE DATABASE user_db;
+          CREATE DATABASE quiz_db;
+          CREATE DATABASE chat_db;
+          CREATE DATABASE notification_db;
+          
+          -- Enable pgvector extension for chat service
+          \c chat_db;
+          CREATE EXTENSION IF NOT EXISTS vector;

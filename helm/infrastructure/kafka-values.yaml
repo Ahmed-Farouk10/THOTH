@@ -1,0 +1,62 @@
+# Kafka Infrastructure - Production Configuration
+# For standalone Kafka deployment (if not using umbrella chart)
+
+replicaCount: 3
+
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: "gp3"  # AWS EBS gp3 volumes
+
+# CRITICAL: Support 10MB messages for document text in Kafka events
+extraEnvVars:
+  - name: KAFKA_MESSAGE_MAX_BYTES
+    value: "10485760"  # 10 MB
+  - name: KAFKA_REPLICA_FETCH_MAX_BYTES
+    value: "10485760"  # 10 MB
+  - name: KAFKA_MAX_REQUEST_SIZE
+    value: "10485760"  # 10 MB
+  - name: KAFKA_SOCKET_REQUEST_MAX_BYTES
+    value: "10485760"  # 10 MB
+
+# Resource allocation
+resources:
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+# JVM heap settings for Kafka
+heapOpts: "-Xmx2048m -Xms2048m"
+
+# Zookeeper configuration
+zookeeper:
+  enabled: true
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 8Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# Metrics and monitoring
+metrics:
+  kafka:
+    enabled: true
+  jmx:
+    enabled: true
+
+# Auto-create topics
+autoCreateTopicsEnable: true
+defaultReplicationFactor: 3
+offsetsTopicReplicationFactor: 3
+
+# Log retention
+logRetentionHours: 168  # 7 days
