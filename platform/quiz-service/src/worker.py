@@ -81,21 +81,24 @@ def check_dependencies():
     return len(issues) == 0
 
 
-def process_quiz_generation(document_id: str, user_id: str, s3_text_url: str, difficulty: str = "Medium"):
-    """Process quiz generation from document text."""
+def process_quiz_generation(document_id: str, user_id: str, extracted_text: str, difficulty: str = "Medium"):
+    """
+    Process quiz generation from document text.
+    
+    CRITICAL: Receives extracted_text from Kafka event (NOT from S3).
+    This enforces storage isolation - quiz service doesn't access document reader's S3 bucket.
+    """
     db = SessionLocal()
     try:
-        logger.info(f"Starting quiz generation - document_id={document_id}, user_id={user_id}, difficulty={difficulty}")
+        text_length = len(extracted_text)
+        logger.info(
+            f"Starting quiz generation - document_id={document_id}, user_id={user_id}, "
+            f"difficulty={difficulty}, text_length={text_length} chars"
+        )
 
-        # Download text from S3
-        logger.info(f"Downloading text from S3: {s3_text_url}")
-        text_bytes = s3_service.download_file(s3_text_url)
-        text_content = text_bytes.decode("utf-8")
-        logger.info(f"Downloaded text length: {len(text_content)} characters")
-
-        # Generate quiz using AI
-        logger.info("Generating quiz with AI service...")
-        generated_quiz = ai_service.generate_quiz(text_content, difficulty=difficulty)
+        # Generate quiz using AI from received text
+        logger.info(f"Generating quiz with AI service from {text_length} chars...")
+        generated_quiz = ai_service.generate_quiz(extracted_text, difficulty=difficulty)
         logger.info(f"Generated quiz with {len(generated_quiz.questions)} questions")
 
         # Save to database
@@ -197,15 +200,23 @@ def consume_loop():
                                 
                                 if normalized_type == "document.processed":
                                     logger.info("Processing document.processed event")
-                                    s3_url = data.get("text_s3_url") or data.get("s3_uri") or data.get("s3_url")
-                                    if not s3_url:
-                                        logger.error(f"No S3 URL found in event data: {data.keys()}")
+                                    
+                                    # CRITICAL: Get extracted text from Kafka event (NOT from S3)
+                                    # This enforces storage isolation - we don't access document reader's S3 bucket
+                                    extracted_text = data.get("extracted_text")
+                                    if not extracted_text:
+                                        logger.error(
+                                            f"Missing 'extracted_text' in document.processed event. "
+                                            f"Available keys: {list(data.keys())}"
+                                        )
                                         continue
+                                    
+                                    logger.info(f"Received {len(extracted_text)} chars via Kafka event")
                                     
                                     process_quiz_generation(
                                         document_id=data["document_id"],
                                         user_id=data["user_id"],
-                                        s3_text_url=s3_url,
+                                        extracted_text=extracted_text,  # ← From Kafka, not S3
                                         difficulty=data.get("difficulty", "Medium"),
                                     )
                                     consumer.commit()

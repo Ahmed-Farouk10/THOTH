@@ -9,40 +9,78 @@ logger = logging.getLogger(__name__)
 
 
 class S3Service:
+    """
+    S3 Service with IAM Role (IRSA) authentication for production.
+    
+    Quiz service MUST use its own bucket (quiz-service-storage-prod).
+    In production, uses IAM roles (no credentials).
+    In development, uses LocalStack with test credentials.
+    """
     def __init__(self):
-        self.bucket_name = os.getenv("S3_BUCKET_NAME", "document-reader-storage-dev")
-        self.endpoint_url = os.getenv("S3_ENDPOINT_URL")
+        # CRITICAL: Bucket name MUST be service-specific (quiz-service bucket only)
+        self.bucket_name = os.getenv("S3_BUCKET_NAME")
+        if not self.bucket_name:
+            raise ValueError(
+                "S3_BUCKET_NAME environment variable is required. "
+                "Quiz service must use 'quiz-service-storage-prod' bucket"
+            )
+        
+        self.environment = os.getenv("ENVIRONMENT", "development")
         self.region = os.getenv("AWS_REGION", "us-east-1")
-
-        client_kwargs = {
-            "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID", "test"),
-            "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
-            "region_name": self.region,
-        }
-        if self.endpoint_url:
-            client_kwargs["endpoint_url"] = self.endpoint_url
-
-        self.s3_client = boto3.client("s3", **client_kwargs)
+        
+        if self.environment == "production":
+            # Production: Use IAM role (IRSA), NO credentials
+            self.s3_client = boto3.client("s3", region_name=self.region)
+            logger.info(
+                f"Quiz S3 client initialized for PRODUCTION (IRSA) - "
+                f"Bucket: {self.bucket_name}, Region: {self.region}"
+            )
+        else:
+            # Development: LocalStack
+            self.endpoint_url = os.getenv("S3_ENDPOINT_URL", "http://localstack:4566")
+            self.s3_client = boto3.client(
+                "s3",
+                endpoint_url=self.endpoint_url,
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+                region_name=self.region,
+            )
+            logger.info(
+                f"Quiz S3 client initialized for DEVELOPMENT (LocalStack) - "
+                f"Bucket: {self.bucket_name}, Endpoint: {self.endpoint_url}"
+            )
 
     def upload_file(self, content: bytes, s3_key: str, content_type: str | None = None) -> str:
-        """Upload file bytes to S3 and return s3:// URL."""
+        """Upload file bytes to THIS service's bucket only (quiz-service bucket)"""
         extra_args = {}
         if content_type:
             extra_args["ContentType"] = content_type
         try:
             self.s3_client.put_object(Bucket=self.bucket_name, Key=s3_key, Body=content, **extra_args)
-            return f"s3://{self.bucket_name}/{s3_key}"
-        except Exception as e:
-            logger.error(f"Error uploading to S3: {e}")
+            s3_url = f"s3://{self.bucket_name}/{s3_key}"
+            logger.info(f"Uploaded quiz to {s3_url}")
+            return s3_url
+        except ClientError as e:
+            logger.error(f"Error uploading to S3 bucket '{self.bucket_name}': {e}")
             raise
 
     def download_file(self, s3_url: str) -> bytes:
-        """Download file bytes from S3 URL."""
+        """Download file bytes from S3 URL (must be from THIS service's bucket)"""
         bucket, key = self._parse_s3_url(s3_url)
+        
+        # Security check: Ensure we're only accessing our own bucket
+        if bucket != self.bucket_name:
+            error_msg = (
+                f"SECURITY VIOLATION: Quiz service attempted to access bucket '{bucket}' "
+                f"but is only authorized for '{self.bucket_name}'"
+            )
+            logger.error(error_msg)
+            raise PermissionError(error_msg)
+        
         try:
             response = self.s3_client.get_object(Bucket=bucket, Key=key)
             return response["Body"].read()
-        except Exception as e:
+        except ClientError as e:
             logger.error(f"Error downloading from S3: {e}")
             raise
 
@@ -51,23 +89,36 @@ class S3Service:
         content = self.download_file(s3_url)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
             tmp.write(content)
-            return tmp.name
+            temp_path = tmp.name
+        logger.info(f"Downloaded to temp file: {temp_path}")
+        return temp_path
 
     def generate_presigned_url(self, s3_key: str, expiration: int = 3600) -> str:
         """Generate presigned GET URL for stored quiz JSON."""
         if s3_key.startswith("s3://"):
-            _, key = self._parse_s3_url(s3_key)
+            bucket, key = self._parse_s3_url(s3_key)
+            # Security check
+            if bucket != self.bucket_name:
+                raise PermissionError(
+                    f"Cannot generate URL for bucket '{bucket}' - only authorized for '{self.bucket_name}'"
+                )
         else:
             key = s3_key
+            
         try:
-            return self.s3_client.generate_presigned_url(
+            url = self.s3_client.generate_presigned_url(
                 "get_object", Params={"Bucket": self.bucket_name, "Key": key}, ExpiresIn=expiration
             )
+            # Replace internal Docker hostname with localhost (development only)
+            if self.environment != "production" and url and "localstack:" in url:
+                url = url.replace("localstack:", "localhost:")
+            return url
         except ClientError as e:
             logger.error(f"Error generating presigned URL: {e}")
             return ""
 
     def _parse_s3_url(self, s3_url: str):
+        """Helper to extract bucket and key from s3:// URL"""
         if s3_url.startswith("s3://"):
             parts = s3_url[5:].split("/", 1)
             if len(parts) == 2:
@@ -75,5 +126,6 @@ class S3Service:
         raise ValueError(f"Invalid S3 URL format: {s3_url}")
 
 
+# Global instance - will raise ValueError if S3_BUCKET_NAME not set
 s3_service = S3Service()
 
