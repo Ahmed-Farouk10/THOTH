@@ -85,3 +85,6 @@ secrets/
 models.json
 s3-cors.json
 
+
+*.tar
+*.tar.gz

@@ -42,7 +42,7 @@ RUN apt-get update && \
 # Copy application code
 COPY ./shared /shared
 COPY ./aggregator /app
-COPY ./scripts /app/scripts
+# COPY ./scripts /app/scripts  # Optional: scripts directory doesn't exist
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
