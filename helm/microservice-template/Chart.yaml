@@ -1,5 +1,5 @@
 apiVersion: v2
-name: microservice
+name: microservice-template
 description: Base Helm chart for Cloud5 microservices with IRSA support
 type: application
 version: 1.0.0
