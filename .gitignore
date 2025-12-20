@@ -10,6 +10,15 @@ ENV/
 .venv
 pip-log.txt
 pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # IDEs
 .vscode/
@@ -31,8 +40,14 @@ logs/
 *.db
 *.sqlite
 
-# Docker
+# Docker (Development Only - Not for Production)
+docker-compose.yml
+docker-compose.override.yml
 .dockerignore
+
+# LocalStack (Development Only)
+localstack_data/
+localstack_init/
 
 # OS
 .DS_Store
@@ -43,10 +58,12 @@ Thumbs.db
 .coverage
 htmlcov/
 
-# Build
-dist/
-build/
-*.egg-info/
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+terraform.tfvars
 
 # Kubernetes
 *.kubeconfig
@@ -57,4 +74,14 @@ build/
 # Temporary
 tmp/
 temp/
+
+# Secrets (Never commit!)
+*.pem
+*.key
+secrets/
+.env.production
+
+# Models and large files
+models.json
+s3-cors.json
 
