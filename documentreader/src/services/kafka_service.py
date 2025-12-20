@@ -15,7 +15,7 @@ class KafkaService:
         self.producer = None
 
     def _get_producer(self):
-        """Lazy load producer"""
+        """Lazy load producer with 10MB message support"""
         if not self.producer:
             try:
                 self.producer = KafkaProducer(
@@ -23,16 +23,22 @@ class KafkaService:
                     value_serializer=lambda v: json.dumps(v).encode('utf-8'),
                     key_serializer=lambda k: k.encode('utf-8') if k else None,
                     acks='all',
-                    retries=3
+                    retries=3,
+                    # CRITICAL: Support 10MB messages for large document text payloads
+                    max_request_size=10485760,  # 10 MB
+                    buffer_memory=33554432,  # 32 MB buffer
                 )
-                logger.info(f"Kafka producer initialized for {self.bootstrap_servers}")
+                logger.info(
+                    f"Kafka producer initialized for {self.bootstrap_servers} "
+                    f"(max_request_size=10MB)"
+                )
             except Exception as e:
                 logger.error(f"Failed to create Kafka producer: {e}")
                 raise
         return self.producer
     
     def create_consumer(self, topics: any, group_id: str):
-        """Create and return a Kafka consumer for workers"""
+        """Create and return a Kafka consumer for workers (supports 10MB messages)"""
         try:
             if isinstance(topics, str):
                 topics = [topics]
@@ -44,7 +50,10 @@ class KafkaService:
                 auto_offset_reset='earliest',
                 enable_auto_commit=False,
                 value_deserializer=lambda x: json.loads(x.decode('utf-8')),
-                consumer_timeout_ms=1000  # Poll every 1 second (for poll() pattern)
+                consumer_timeout_ms=1000,  # Poll every 1 second (for poll() pattern)
+                # CRITICAL: Support receiving 10MB messages (for document text)
+                max_partition_fetch_bytes=10485760,  # 10 MB
+                fetch_max_bytes=52428800,  # 50 MB total
             )
         except Exception as e:
             logger.error(f"Failed to create Kafka consumer: {e}")

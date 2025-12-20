@@ -145,15 +145,20 @@ def process_document(document_id: str, user_id: str, s3_url: str, filename: str,
                 base_trace_id = f"trace-{uuid.uuid4()}"
                 base_correlation_id = f"corr-{document_id}"
 
-                # document.processed.v1 event
+                # CRITICAL: document.processed.v1 event with FULL extracted text
+                # This allows quiz-service and chat-service to receive the text
+                # WITHOUT accessing the document-reader's S3 bucket (storage isolation)
                 processed_event = {
                     "event_type": "document.processed.v1",
                     "event_id": f"evt-{uuid.uuid4()}",
                     "document_id": document_id,
                     "user_id": user_id,
+                    # CRITICAL: Include full extracted text in payload
+                    "extracted_text": extracted_text,  # ← ADDED for storage isolation
+                    "text_length": text_length,
+                    # S3 URLs for reference/audit only (other services won't access these)
                     "s3_uri": text_s3_url,
                     "text_s3_url": text_s3_url,
-                    "text_length": text_length,
                     "processed_at": datetime.utcnow().isoformat(),
                     "timestamp": datetime.utcnow().isoformat(),
                     "trace_id": base_trace_id,
@@ -161,6 +166,11 @@ def process_document(document_id: str, user_id: str, s3_url: str, filename: str,
                     "schema_version": "1.0.0",
                     "service": "document-reader-worker",
                 }
+                
+                logger.info(
+                    f"Publishing document.processed event with {text_length} chars "
+                    f"for document {document_id}"
+                )
                 producer.send("document.processed", value=processed_event, key=document_id)
 
                 # notes.generated.v1 event
