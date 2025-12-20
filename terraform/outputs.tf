@@ -18,11 +18,6 @@ output "eks_cluster_endpoint" {
   sensitive   = true
 }
 
-output "eks_oidc_provider_arn" {
-  description = "EKS OIDC provider ARN (for IRSA)"
-  value       = aws_iam_openid_connect_provider.eks.arn
-}
-
 output "s3_buckets" {
   description = "S3 bucket names by service"
   value = {
@@ -35,14 +30,6 @@ output "rds_endpoint" {
   description = "RDS database endpoint"
   value       = aws_db_instance.main.endpoint
   sensitive   = true
-}
-
-output "iam_role_arns" {
-  description = "IAM role ARNs by service (for IRSA)"
-  value = {
-    for service in local.services :
-    service => aws_iam_role.service_roles[service].arn
-  }
 }
 
 output "kubectl_config_command" {

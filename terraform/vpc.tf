@@ -100,7 +100,7 @@ resource "aws_route_table_association" "private" {
 }
 
 # ============================================================================
-# VPC FLOW LOGS (Security Requirement 8.1)
+# VPC FLOW LOGS (Using LabRole for AWS Academy)
 # ============================================================================
 
 resource "aws_cloudwatch_log_group" "flow_log" {
@@ -112,8 +112,12 @@ resource "aws_cloudwatch_log_group" "flow_log" {
   }
 }
 
+data "aws_iam_role" "lab_role_vpc" {
+  name = "LabRole"
+}
+
 resource "aws_flow_log" "main" {
-  iam_role_arn    = aws_iam_role.vpc_flow_log.arn
+  iam_role_arn    = data.aws_iam_role.lab_role_vpc.arn # CHANGED: Use LabRole
   log_destination = aws_cloudwatch_log_group.flow_log.arn
   traffic_type    = "ALL"
   vpc_id          = aws_vpc.main.id
@@ -121,41 +125,4 @@ resource "aws_flow_log" "main" {
   tags = {
     Name = "cloud5-vpc-flow-log-${var.environment}"
   }
-}
-
-resource "aws_iam_role" "vpc_flow_log" {
-  name = "cloud5-vpc-flow-log-role-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action    = "sts:AssumeRole"
-      Effect    = "Allow"
-      Principal = { Service = "vpc-flow-logs.amazonaws.com" }
-    }]
-  })
-  
-  tags = {
-    Name = "cloud5-vpc-flow-log-role-${var.environment}"
-  }
-}
-
-resource "aws_iam_role_policy" "vpc_flow_log" {
-  name = "cloud5-vpc-flow-log-policy"
-  role = aws_iam_role.vpc_flow_log.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents",
-        "logs:DescribeLogGroups",
-        "logs:DescribeLogStreams"
-      ]
-      Effect   = "Allow"
-      Resource = "*"
-    }]
-  })
 }

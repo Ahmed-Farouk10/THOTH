@@ -2,6 +2,11 @@
 # HELM CHART DEPLOYMENT
 # ============================================================================
 
+# Get LabRole for IRSA annotations
+data "aws_iam_role" "lab_role_helm" {
+  name = "LabRole"
+}
+
 # Deploy the Cloud5 Platform Umbrella Chart
 resource "helm_release" "cloud5_platform" {
   name             = "cloud5"
@@ -82,29 +87,29 @@ resource "helm_release" "cloud5_platform" {
     value = aws_s3_bucket.service_storage["stt-service"].id
   }
 
-  # IRSA (IAM Roles for Service Accounts) Annotations
+  # IRSA (IAM Roles for Service Accounts) Annotations - Using LabRole for AWS Academy
   set {
-    name  = "document-reader.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.service_roles["document-reader"].arn
+    name  = "document-reader.serviceAccount.annotations.eks\\\\.amazonaws\\\\.com/role-arn"
+    value = data.aws_iam_role.lab_role_helm.arn
   }
   
   set {
-    name  = "quiz-service.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.service_roles["quiz-service"].arn
+    name  = "quiz-service.serviceAccount.annotations.eks\\\\.amazonaws\\\\.com/role-arn"
+    value = data.aws_iam_role.lab_role_helm.arn
   }
   
   set {
-    name  = "chat-service.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.service_roles["chat-service"].arn
+    name  = "chat-service.serviceAccount.annotations.eks\\\\.amazonaws\\\\.com/role-arn"
+    value = data.aws_iam_role.lab_role_helm.arn
   }
   
   set {
-    name  = "tts-service.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.service_roles["tts-service"].arn
+    name  = "tts-service.serviceAccount.annotations.eks\\\\.amazonaws\\\\.com/role-arn"
+    value = data.aws_iam_role.lab_role_helm.arn
   }
   
   set {
-    name  = "stt-service.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.service_roles["stt-service"].arn
+    name  = "stt-service.serviceAccount.annotations.eks\\\\.amazonaws\\\\.com/role-arn"
+    value = data.aws_iam_role.lab_role_helm.arn
   }
 }
