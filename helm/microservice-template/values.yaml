@@ -1,0 +1,121 @@
+# Default values for microservice-template
+# This is a YAML-formatted file with default values that can be overridden per service
+
+# Image configuration
+image:
+  repository: nginx  # Override with actual ECR repository
+  pullPolicy: IfNotPresent
+  tag: ""  # Overrides the image tag whose default is the chart appVersion
+
+# Number of replicas
+replicaCount: 2
+
+# ServiceAccount configuration (IRSA)
+serviceAccount:
+  create: true
+  annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/service-role
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+
+# Kubernetes Service
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+# Ingress (optional)
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Resource requests and limits
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Health check configuration
+healthCheck:
+  enabled: true
+  liveness:
+    path: /health
+    port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /health
+    port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    path: /health
+    port: http
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 30
+
+# Environment variables (non-sensitive)
+env: []
+  # - name: ENVIRONMENT
+  #   value: "production"
+  # - name: AWS_REGION
+  #   value: "us-east-1"
+
+# Environment variables from ConfigMap
+envFrom: []
+  # - configMapRef:
+  #     name: my-config
+
+# Secrets (sensitive data)
+secrets: {}
+  # JWT_SECRET: "change-me"
+  # DATABASE_PASSWORD: "change-me"
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity rules
+affinity: {}
