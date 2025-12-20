@@ -11,7 +11,7 @@ data "aws_iam_role" "lab_role" {
 resource "aws_eks_cluster" "main" {
   name     = "cloud5-cluster-${var.environment}"
   role_arn = data.aws_iam_role.lab_role.arn  # CHANGED: Use LabRole
-  version  = "1.28"
+  version  = "1.29"  # Incremental upgrade from 1.28
 
   vpc_config {
     subnet_ids              = concat(aws_subnet.private[*].id, aws_subnet.public[*].id)
