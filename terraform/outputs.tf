@@ -49,3 +49,10 @@ output "kubectl_config_command" {
   description = "Command to configure kubectl"
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.main.name}"
 }
+
+output "ecr_repositories" {
+  description = "ECR repository URLs for Docker push"
+  value = {
+    for k, v in aws_ecr_repository.services : k => v.repository_url
+  }
+}

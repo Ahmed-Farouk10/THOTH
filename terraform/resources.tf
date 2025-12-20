@@ -158,3 +158,32 @@ resource "aws_secretsmanager_secret_version" "db_password" {
   secret_id     = aws_secretsmanager_secret.db_password.id
   secret_string = random_password.db_password.result
 }
+
+# ============================================================================
+# ECR REPOSITORIES (Where we push our Docker Images)
+# ============================================================================
+
+resource "aws_ecr_repository" "services" {
+  for_each = toset([
+    "document-reader",
+    "quiz-service",
+    "chat-service",
+    "tts-service",
+    "stt-service",
+    "user-service",
+    "aggregator",
+    "notification-service"
+  ])
+
+  name                 = each.value
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name    = each.value
+    Service = each.value
+  }
+}

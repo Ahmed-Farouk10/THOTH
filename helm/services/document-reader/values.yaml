@@ -2,7 +2,7 @@
 # Overrides helm/microservice-template/values.yaml
 
 image:
-  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/document-reader
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/document-reader  # ⚠️ Placeholder: Terraform injects actual ECR URL
   tag: "v1.0.0"
   pullPolicy: IfNotPresent
 
@@ -36,7 +36,7 @@ env:
   - name: AWS_REGION
     value: "us-east-1"
   - name: S3_BUCKET_NAME
-    value: "document-reader-storage-prod"
+    value: "document-reader-storage-prod"  # ⚠️ Placeholder: Terraform injects actual bucket name
   - name: KAFKA_BOOTSTRAP_SERVERS
     value: "kafka:9092"
   - name: DATABASE_URL

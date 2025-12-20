@@ -98,3 +98,64 @@ resource "aws_route_table_association" "private" {
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private.id
 }
+
+# ============================================================================
+# VPC FLOW LOGS (Security Requirement 8.1)
+# ============================================================================
+
+resource "aws_cloudwatch_log_group" "flow_log" {
+  name              = "/aws/vpc/cloud5-flow-log-${var.environment}"
+  retention_in_days = 7
+  
+  tags = {
+    Name = "cloud5-vpc-flow-log-${var.environment}"
+  }
+}
+
+resource "aws_flow_log" "main" {
+  iam_role_arn    = aws_iam_role.vpc_flow_log.arn
+  log_destination = aws_cloudwatch_log_group.flow_log.arn
+  traffic_type    = "ALL"
+  vpc_id          = aws_vpc.main.id
+  
+  tags = {
+    Name = "cloud5-vpc-flow-log-${var.environment}"
+  }
+}
+
+resource "aws_iam_role" "vpc_flow_log" {
+  name = "cloud5-vpc-flow-log-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "vpc-flow-logs.amazonaws.com" }
+    }]
+  })
+  
+  tags = {
+    Name = "cloud5-vpc-flow-log-role-${var.environment}"
+  }
+}
+
+resource "aws_iam_role_policy" "vpc_flow_log" {
+  name = "cloud5-vpc-flow-log-policy"
+  role = aws_iam_role.vpc_flow_log.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ]
+      Effect   = "Allow"
+      Resource = "*"
+    }]
+  })
+}

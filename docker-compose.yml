@@ -192,7 +192,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@document-db:5432/document_reader_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      S3_BUCKET_NAME: documents
+      S3_BUCKET_NAME: cloud5-document-reader-storage-dev  # Service-specific bucket
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
@@ -228,7 +228,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@document-db:5432/document_reader_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      S3_BUCKET_NAME: documents
+      S3_BUCKET_NAME: cloud5-document-reader-storage-dev  # Same bucket for worker
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
@@ -373,7 +373,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      S3_BUCKET_NAME: documents
+      S3_BUCKET_NAME: cloud5-quiz-service-storage-dev  # Service-specific bucket
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
@@ -418,7 +418,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@quiz-db:5432/quiz_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      S3_BUCKET_NAME: documents
+      S3_BUCKET_NAME: cloud5-chat-service-storage-dev  # Service-specific bucket
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
@@ -465,7 +465,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@chat-db:5432/chat_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      S3_BUCKET_NAME: documents
+      S3_BUCKET_NAME: cloud5-tts-service-storage-dev  # Service-specific bucket
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
@@ -502,7 +502,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:password@chat-db:5432/chat_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      S3_BUCKET_NAME: documents
+      S3_BUCKET_NAME: cloud5-stt-service-storage-dev  # Service-specific bucket
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
