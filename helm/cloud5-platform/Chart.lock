@@ -1,0 +1,33 @@
+dependencies:
+- name: document-reader
+  repository: file://../services/document-reader
+  version: 1.0.0
+- name: quiz-service
+  repository: file://../services/quiz-service
+  version: 1.0.0
+- name: chat-service
+  repository: file://../services/chat-service
+  version: 1.0.0
+- name: user-service
+  repository: file://../services/user-service
+  version: 1.0.0
+- name: aggregator
+  repository: file://../services/aggregator
+  version: 1.0.0
+- name: notification-service
+  repository: file://../services/notification-service
+  version: 1.0.0
+- name: tts-service
+  repository: file://../services/tts-service
+  version: 1.0.0
+- name: stt-service
+  repository: file://../services/stt-service
+  version: 1.0.0
+- name: kafka
+  repository: https://charts.bitnami.com/bitnami
+  version: 31.0.0
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 18.1.15
+digest: sha256:28319925562e1c9e32c2b1ee5f609373f6db31a603b5b54f46f1f7427dfcddf4
+generated: "2025-12-20T15:04:41.3943352+02:00"
