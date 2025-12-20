@@ -1,79 +1,101 @@
-const AWS = require("aws-sdk");
+const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const logger = require("../utils/logger");
 
-// Configure AWS
-const s3Config = {
-  region: process.env.AWS_REGION || "us-east-1",
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID || "test",
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "test",
-};
+/**
+ * S3 Service with IAM Role (IRSA) authentication for production.
+ * 
+ * TTS service MUST use its own bucket (tts-service-storage-prod).
+ * In production, uses IAM roles (no credentials).
+ * In development, uses LocalStack with test credentials.
+ */
 
-// Support LocalStack endpoint
-if (process.env.S3_ENDPOINT) {
-  s3Config.endpoint = process.env.S3_ENDPOINT;
-  s3Config.s3ForcePathStyle = true; // Required for LocalStack
+// CRITICAL: Bucket name MUST be service-specific
+const BUCKET_NAME = process.env.S3_BUCKET_NAME;
+if (!BUCKET_NAME) {
+  throw new Error(
+    "S3_BUCKET_NAME environment variable is required. " +
+    "TTS service must use 'tts-service-storage-prod' bucket"
+  );
 }
 
-AWS.config.update(s3Config);
+const ENVIRONMENT = process.env.ENVIRONMENT || 'development';
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
-const s3 = new AWS.S3();
-const bucketName = process.env.S3_BUCKET || "document-reader-storage-dev";
+let s3ClientConfig;
 
-const uploadToS3 = async (buffer, filename, contentType = "audio/mpeg") => {
+if (ENVIRONMENT === 'production') {
+  // Production: Use IAM role (IRSA), NO credentials
+  // Kubernetes ServiceAccount with eks.amazonaws.com/role-arn annotation
+  // provides temporary credentials automatically
+  s3ClientConfig = {
+    region: AWS_REGION,
+  };
+  logger.info(`TTS S3 client initialized for PRODUCTION (IRSA) - Bucket: ${BUCKET_NAME}, Region: ${AWS_REGION}`);
+} else {
+  // Development: LocalStack
+  const S3_ENDPOINT = process.env.S3_ENDPOINT_URL || process.env.S3_ENDPOINT || 'http://localstack:4566';
+  s3ClientConfig = {
+    region: AWS_REGION,
+    endpoint: S3_ENDPOINT,
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'test',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'test',
+    },
+    forcePathStyle: true, // Required for LocalStack
+  };
+  logger.info(`TTS S3 client initialized for DEVELOPMENT (LocalStack) - Bucket: ${BUCKET_NAME}, Endpoint: ${S3_ENDPOINT}`);
+}
+
+const s3Client = new S3Client(s3ClientConfig);
+
+/**
+ * Upload audio file to S3 (TTS service's own bucket only)
+ */
+async function uploadAudio(audioBuffer, key) {
   try {
-    const key = filename.startsWith("audio/") ? filename : `audio/${Date.now()}-${filename}`;
-    const params = {
-      Bucket: bucketName,
+    const command = new PutObjectCommand({
+      Bucket: BUCKET_NAME,
       Key: key,
-      Body: buffer,
-      ContentType: contentType,
-    };
+      Body: audioBuffer,
+      ContentType: 'audio/mpeg',
+    });
 
-    // Don't set ACL for LocalStack compatibility
-    if (!process.env.S3_ENDPOINT) {
-      params.ACL = "public-read";
+    await s3Client.send(command);
+    const s3Url = `s3://${BUCKET_NAME}/${key}`;
+    logger.info(`Uploaded audio to ${s3Url}`);
+    return s3Url;
+  } catch (error) {
+    logger.error(`Error uploading to S3 bucket '${BUCKET_NAME}':`, error);
+    throw error;
+  }
+}
+
+/**
+ * Generate presigned URL for audio file (from TTS bucket only)
+ */
+async function generatePresignedUrl(key, expiresIn = 3600) {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+    });
+
+    const url = await getSignedUrl(s3Client, command, { expiresIn });
+
+    // Replace internal Docker hostname with localhost (development only)
+    if (ENVIRONMENT !== 'production' && url.includes('localstack:')) {
+      return url.replace('localstack:', 'localhost:');
     }
 
-    const result = await s3.upload(params).promise();
-    
-    // Return S3 URI format for consistency
-    const s3Uri = result.Location || `s3://${bucketName}/${key}`;
-    logger.info(`File uploaded to S3: ${s3Uri}`);
-    return s3Uri;
+    return url;
   } catch (error) {
-    logger.error("S3 upload error:", error);
+    logger.error('Error generating presigned URL:', error);
     throw error;
   }
+}
+
+module.exports = {
+  uploadAudio,
+  generatePresignedUrl,
 };
-
-const getFromS3 = async (key) => {
-  try {
-    const params = {
-      Bucket: bucketName,
-      Key: key,
-    };
-
-    const result = await s3.getObject(params).promise();
-    return result.Body;
-  } catch (error) {
-    logger.error("S3 get error:", error);
-    throw error;
-  }
-};
-
-const deleteFromS3 = async (key) => {
-  try {
-    const params = {
-      Bucket: bucketName,
-      Key: key,
-    };
-
-    await s3.deleteObject(params).promise();
-    logger.info(`File deleted from S3: ${key}`);
-  } catch (error) {
-    logger.error("S3 delete error:", error);
-    throw error;
-  }
-};
-
-module.exports = { uploadToS3, getFromS3, deleteFromS3 };

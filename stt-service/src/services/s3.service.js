@@ -1,54 +1,83 @@
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const logger = require("../utils/logger");
 
-// Configure S3 Client
-const s3Config = {
-  region: process.env.AWS_REGION || "us-east-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "test",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "test",
-  },
-};
+/**
+ * S3 Service with IAM Role (IRSA) authentication for production.
+ * 
+ * STT service MUST use its own bucket (stt-service-storage-prod).
+ * In production, uses IAM roles (no credentials).
+ * In development, uses LocalStack with test credentials.
+ */
 
-// Support LocalStack endpoint
-if (process.env.S3_ENDPOINT) {
-  s3Config.endpoint = process.env.S3_ENDPOINT;
-  s3Config.forcePathStyle = true; // Required for LocalStack
+// CRITICAL: Bucket name MUST be service-specific
+const BUCKET_NAME = process.env.S3_BUCKET_NAME;
+if (!BUCKET_NAME) {
+  throw new Error(
+    "S3_BUCKET_NAME environment variable is required. " +
+    "STT service must use 'stt-service-storage-prod' bucket"
+  );
+}
+
+const ENVIRONMENT = process.env.ENVIRONMENT || 'development';
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+
+let s3Config;
+
+if (ENVIRONMENT === 'production') {
+  // Production: Use IAM role (IRSA), NO credentials
+  s3Config = {
+    region: AWS_REGION,
+  };
+  logger.info(`STT S3 client initialized for PRODUCTION (IRSA) - Bucket: ${BUCKET_NAME}, Region: ${AWS_REGION}`);
+} else {
+  // Development: LocalStack
+  const S3_ENDPOINT = process.env.S3_ENDPOINT || 'http://localstack:4566';
+  s3Config = {
+    region: AWS_REGION,
+    endpoint: S3_ENDPOINT,
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'test',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'test',
+    },
+    forcePathStyle: true, // Required for LocalStack
+  };
+  logger.info(`STT S3 client initialized for DEVELOPMENT (LocalStack) - Bucket: ${BUCKET_NAME}, Endpoint: ${S3_ENDPOINT}`);
 }
 
 const s3Client = new S3Client(s3Config);
-const bucketName = process.env.S3_BUCKET || "document-reader-storage-dev";
 
+/**
+ * Upload audio file to S3 (STT service's own bucket only)
+ */
 const uploadToS3 = async (buffer, filename, contentType) => {
   try {
     const key = filename.startsWith("audio/") ? filename : `audio/${Date.now()}-${filename}`;
-    
+
     const command = new PutObjectCommand({
-      Bucket: bucketName,
+      Bucket: BUCKET_NAME,
       Key: key,
       Body: buffer,
       ContentType: contentType,
     });
 
     await s3Client.send(command);
-    
-    // Return S3 URI format for consistency
-    const s3Uri = process.env.S3_ENDPOINT 
-      ? `${process.env.S3_ENDPOINT}/${bucketName}/${key}`
-      : `s3://${bucketName}/${key}`;
-    
-    logger.info(`File uploaded to S3: ${s3Uri}`);
+
+    const s3Uri = `s3://${BUCKET_NAME}/${key}`;
+    logger.info(`Uploaded audio to ${s3Uri}`);
     return s3Uri;
   } catch (error) {
-    logger.error("S3 upload error:", error);
+    logger.error(`Error uploading to S3 bucket '${BUCKET_NAME}':`, error);
     throw error;
   }
 };
 
+/**
+ * Get file from S3 (STT bucket only)
+ */
 const getFromS3 = async (key) => {
   try {
     const command = new GetObjectCommand({
-      Bucket: bucketName,
+      Bucket: BUCKET_NAME,
       Key: key,
     });
 
@@ -64,48 +93,52 @@ const getFromS3 = async (key) => {
   }
 };
 
+/**
+ * Delete file from S3
+ */
 const deleteFromS3 = async (key) => {
   try {
     const command = new DeleteObjectCommand({
-      Bucket: bucketName,
+      Bucket: BUCKET_NAME,
       Key: key,
     });
 
     await s3Client.send(command);
-    logger.info(`File deleted from S3: ${key}`);
+    logger.info(`Deleted file from S3: ${key}`);
   } catch (error) {
     logger.error("S3 delete error:", error);
     throw error;
   }
 };
 
+/**
+ * Download file from S3 URL (must be from STT bucket only)
+ */
 const downloadFromS3 = async (s3Uri) => {
   try {
-    // Parse S3 URI (s3://bucket/key or http://localstack:4566/bucket/key)
+    // Parse S3 URI
     let bucket, key;
-    
+
     if (s3Uri.startsWith("s3://")) {
       const parts = s3Uri.replace("s3://", "").split("/");
       bucket = parts[0];
       key = parts.slice(1).join("/");
-    } else if (s3Uri.includes("localstack") || s3Uri.includes("s3")) {
-      // Handle LocalStack URL format: http://localstack:4566/bucket/key
-      try {
-        const url = new URL(s3Uri);
-        const pathParts = url.pathname.split("/").filter(p => p);
-        bucket = pathParts[0];
-        key = pathParts.slice(1).join("/");
-      } catch (urlError) {
-        // Fallback: assume it's just a key
-        bucket = bucketName;
-        key = s3Uri.replace(/^.*\/audio\//, "audio/");
-      }
     } else {
       // Assume it's just a key
-      bucket = bucketName;
+      bucket = BUCKET_NAME;
       key = s3Uri;
     }
-    
+
+    // Security check: Ensure we're only accessing our own bucket
+    if (bucket !== BUCKET_NAME) {
+      const error = new Error(
+        `SECURITY VIOLATION: STT service attempted to access bucket '${bucket}' ` +
+        `but is only authorized for '${BUCKET_NAME}'`
+      );
+      logger.error(error.message);
+      throw error;
+    }
+
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: key,
@@ -117,7 +150,7 @@ const downloadFromS3 = async (s3Uri) => {
       chunks.push(chunk);
     }
     const buffer = Buffer.concat(chunks);
-    
+
     logger.info(`Downloaded from S3: ${bucket}/${key} (${buffer.length} bytes)`);
     return buffer;
   } catch (error) {
