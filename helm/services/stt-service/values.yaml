@@ -1,0 +1,68 @@
+# STT Service - Production Values
+
+image:
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/stt-service
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8007
+  targetPort: 8007
+
+# IRSA Configuration
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/stt-service-role
+  name: stt-service-sa
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1500m
+    memory: 2Gi
+
+env:
+  - name: ENVIRONMENT
+    value: "production"
+  - name: NODE_ENV
+    value: "production"
+  - name: AWS_REGION
+    value: "us-east-1"
+  - name: S3_BUCKET_NAME
+    value: "stt-service-storage-prod"
+
+secrets:
+  OPENAI_API_KEY: "sk-placeholder"
+
+healthCheck:
+  enabled: true
+  liveness:
+    path: /health
+    port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    path: /health
+    port: http
+    initialDelaySeconds: 15
+    periodSeconds: 5
+  startup:
+    path: /health
+    port: http
+    failureThreshold: 20
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8007"

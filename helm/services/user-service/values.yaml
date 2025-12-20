@@ -1,0 +1,64 @@
+# User Service - Production Values
+
+image:
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/user-service
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 3  # User service is critical, higher replica count
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+# No S3 bucket needed - authentication service only
+serviceAccount:
+  create: true
+  annotations: {}  # No IRSA needed
+  name: user-service-sa
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+env:
+  - name: ENVIRONMENT
+    value: "production"
+  - name: DATABASE_URL
+    value: "postgresql://postgres:5432/user_db"
+
+secrets:
+  JWT_SECRET: "jwt_secret_placeholder_change_in_production"
+  DATABASE_PASSWORD: "postgres_password_placeholder"
+
+healthCheck:
+  enabled: true
+  liveness:
+    path: /health
+    port: http
+    initialDelaySeconds: 20
+    periodSeconds: 10
+  readiness:
+    path: /health
+    port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  startup:
+    path: /health
+    port: http
+    failureThreshold: 20
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 15  # User authentication can spike
+  targetCPUUtilizationPercentage: 60
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8000"

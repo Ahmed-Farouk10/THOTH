@@ -1,0 +1,87 @@
+# Document Reader Service - Production Values
+# Overrides helm/microservice-template/values.yaml
+
+image:
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/document-reader
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+# IRSA Configuration - IAM Role for S3 access
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/document-reader-role
+  name: document-reader-sa
+
+# Resource allocation (document processing is CPU/memory intensive)
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+# Environment Variables
+env:
+  - name: ENVIRONMENT
+    value: "production"
+  - name: AWS_REGION
+    value: "us-east-1"
+  - name: S3_BUCKET_NAME
+    value: "document-reader-storage-prod"
+  - name: KAFKA_BOOTSTRAP_SERVERS
+    value: "kafka:9092"
+  - name: DATABASE_URL
+    value: "postgresql://postgres:5432/document_db"
+
+# Secrets (will be created separately in production)
+secrets:
+  HUGGINGFACE_API_KEY: "hf_placeholder_key"
+  DATABASE_PASSWORD: "postgres_password_placeholder"
+
+# Health Check Configuration
+healthCheck:
+  enabled: true
+  liveness:
+    path: /health
+    port: http
+    initialDelaySeconds: 60  # Document processing takes time to start
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /health
+    port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    path: /health
+    port: http
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 60  # Allow 10 minutes for startup (spaCy models, etc.)
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Pod annotations for monitoring
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8000"
+  prometheus.io/path: "/metrics"

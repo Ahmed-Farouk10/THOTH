@@ -1,0 +1,71 @@
+# Quiz Service - Production Values
+
+image:
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/quiz-service
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8004
+  targetPort: 8004
+
+# IRSA Configuration
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/quiz-service-role
+  name: quiz-service-sa
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1500m
+    memory: 3Gi
+
+env:
+  - name: ENVIRONMENT
+    value: "production"
+  - name: AWS_REGION
+    value: "us-east-1"
+  - name: S3_BUCKET_NAME
+    value: "quiz-service-storage-prod"
+  - name: KAFKA_BOOTSTRAP_SERVERS
+    value: "kafka:9092"
+  - name: DATABASE_URL
+    value: "postgresql://postgres:5432/quiz_db"
+
+secrets:
+  HUGGINGFACE_API_KEY: "hf_placeholder_key"
+  DATABASE_PASSWORD: "postgres_password_placeholder"
+
+healthCheck:
+  enabled: true
+  liveness:
+    path: /health
+    port: http
+    initialDelaySeconds: 45
+    periodSeconds: 10
+  readiness:
+    path: /health
+    port: http
+    initialDelaySeconds: 20
+    periodSeconds: 5
+  startup:
+    path: /health
+    port: http
+    failureThreshold: 30
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8004"

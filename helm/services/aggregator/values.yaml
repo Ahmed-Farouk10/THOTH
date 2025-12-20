@@ -1,0 +1,72 @@
+# Aggregator Service - Production Values
+
+image:
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/aggregator
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 3  # API Gateway - needs high availability
+
+service:
+  type: LoadBalancer  # Exposed externally
+  port: 80
+  targetPort: 8080
+
+# No S3 - just proxies requests
+serviceAccount:
+  create: true
+  annotations: {}
+  name: aggregator-sa
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+env:
+  - name: ENVIRONMENT
+    value: "production"
+  - name: KAFKA_BOOTSTRAP_SERVERS
+    value: "kafka:9092"
+  - name: DOCUMENT_SERVICE_URL
+    value: "http://document-reader:8000"
+  - name: CHAT_SERVICE_URL
+    value: "http://chat-service:8005"
+  - name: QUIZ_SERVICE_URL
+    value: "http://quiz-service:8004"
+  - name: TTS_SERVICE_URL
+    value: "http://tts-service:8006"
+  - name: STT_SERVICE_URL
+    value: "http://stt-service:8007"
+  - name: USER_SERVICE_URL
+    value: "http://user-service:8000"
+
+healthCheck:
+  enabled: true
+  liveness:
+    path: /health
+    port: http
+    initialDelaySeconds: 20
+    periodSeconds: 10
+  readiness:
+    path: /health
+    port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  startup:
+    path: /health
+    port: http
+    failureThreshold: 20
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20  # High traffic gateway
+  targetCPUUtilizationPercentage: 60
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"

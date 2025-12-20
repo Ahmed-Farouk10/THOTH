@@ -1,0 +1,65 @@
+# Notification Service - Production Values
+
+image:
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/notification-service
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8003
+  targetPort: 8003
+
+# No S3 - Kafka consumer + WebSocket
+serviceAccount:
+  create: true
+  annotations: {}
+  name: notification-service-sa
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+env:
+  - name: ENVIRONMENT
+    value: "production"
+  - name: KAFKA_BOOTSTRAP_SERVERS
+    value: "kafka:9092"
+  - name: DATABASE_URL
+    value: "postgresql://postgres:5432/notification_db"
+
+secrets:
+  DATABASE_PASSWORD: "postgres_password_placeholder"
+
+healthCheck:
+  enabled: true
+  liveness:
+    path: /health
+    port: http
+    initialDelaySeconds: 20
+    periodSeconds: 10
+  readiness:
+    path: /health
+    port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  startup:
+    path: /health
+    port: http
+    failureThreshold: 20
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8003"

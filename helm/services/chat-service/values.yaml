@@ -1,0 +1,73 @@
+# Chat Service - Production Values
+
+image:
+  repository: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/chat-service
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8005
+  targetPort: 8005
+
+# IRSA Configuration
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/chat-service-role
+  name: chat-service-sa
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi  # RAG requires more memory for embeddings
+
+env:
+  - name: ENVIRONMENT
+    value: "production"
+  - name: AWS_REGION
+    value: "us-east-1"
+  - name: S3_BUCKET_NAME
+    value: "chat-service-storage-prod"
+  - name: KAFKA_BOOTSTRAP_SERVERS
+    value: "kafka:9092"
+  - name: DATABASE_URL
+    value: "postgresql://postgres:5432/chat_db"
+
+secrets:
+  HUGGINGFACE_API_KEY: "hf_placeholder_key"
+  OPENAI_API_KEY: "sk-placeholder"
+  DATABASE_PASSWORD: "postgres_password_placeholder"
+
+healthCheck:
+  enabled: true
+  liveness:
+    path: /health
+    port: http
+    initialDelaySeconds: 45
+    periodSeconds: 10
+  readiness:
+    path: /health
+    port: http
+    initialDelaySeconds: 20
+    periodSeconds: 5
+  startup:
+    path: /health
+    port: http
+    failureThreshold: 30
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8005"
