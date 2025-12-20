@@ -16,24 +16,23 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
 
-def ingest_document(document_id: str, s3_url: str):
+def ingest_document(document_id: str, extracted_text: str):
+    """
+    Ingest document text for RAG (Retrieval-Augmented Generation).
+    
+    CRITICAL: Receives extracted_text from Kafka event (NOT from S3).
+    This enforces storage isolation - chat service doesn't access document reader's S3 bucket.
+    """
     db = SessionLocal()
     try:
-        logger.info(f"🧠 Vectorizing document {document_id}...")
-        
-        # 1. Download Text
-        try:
-            content_bytes = s3_service.download_file(s3_url)
-            full_text = content_bytes.decode('utf-8')
-        except Exception as e:
-            logger.error(f"Failed to download from S3: {e}")
-            return
+        text_length = len(extracted_text)
+        logger.info(f"🧠 Vectorizing document {document_id} ({text_length} chars)...")
 
-        # 2. Split Text into Chunks
-        chunks = text_splitter.split_text(full_text)
+        # Split Text into Chunks
+        chunks = text_splitter.split_text(extracted_text)
         logger.info(f"Split into {len(chunks)} chunks. Generating embeddings...")
         
-        # 3. Generate Embeddings & Save
+        # Generate Embeddings & Save
         count = 0
         for chunk in chunks:
             try:
@@ -81,14 +80,20 @@ def consume_loop():
             event_type = data.get("event_type", "")
             
             if "document.processed" in event_type:
-                # Handle different URL keys from different producers
-                s3_url = data.get("text_s3_url") or data.get("s3_uri") or data.get("s3_url")
+                # CRITICAL: Get extracted text from Kafka event (NOT from S3)
+                # This enforces storage isolation - we don't access document reader's S3 bucket
+                extracted_text = data.get("extracted_text")
                 
-                if s3_url:
-                    ingest_document(data['document_id'], s3_url)
-                    consumer.commit()
-                else:
-                    logger.warning(f"No S3 URL in event: {data}")
+                if not extracted_text:
+                    logger.warning(
+                        f"Missing 'extracted_text' in document.processed event. "
+                        f"Available keys: {list(data.keys())}"
+                    )
+                    continue
+                
+                logger.info(f"Received {len(extracted_text)} chars via Kafka for vectorization")
+                ingest_document(data['document_id'], extracted_text)  # ← From Kafka, not S3
+                consumer.commit()
                     
         except Exception as e:
             logger.error(f"Error processing message: {e}")
