@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag to deploy (e.g., v1.2.3)'
+        description: "Version tag to deploy (e.g., v1.2.3)"
         required: true
         type: string
 
@@ -17,7 +17,7 @@ env:
 jobs:
   approval:
     runs-on: ubuntu-latest
-    environment: 
+    environment:
       name: production
       url: https://thoth.yourdomain.com
     steps:
@@ -32,9 +32,9 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    
+
     strategy:
-      fail-fast: true  # Stop all if one fails in production
+      fail-fast: true # Stop all if one fails in production
       matrix:
         service:
           - aggregator
@@ -95,12 +95,12 @@ jobs:
       - name: Run comprehensive security scan
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: 'fs'
+          scan-type: "fs"
           scan-ref: ${{ steps.service-path.outputs.dockerfile }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          exit-code: '1'
-          severity: 'CRITICAL,HIGH'
+          format: "sarif"
+          output: "trivy-results.sarif"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -121,7 +121,7 @@ jobs:
           # Install Cosign
           curl -Lo cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
           chmod +x cosign
-          
+
           # Sign the image
           ./cosign sign --yes \
             ${{ steps.login-ecr.outputs.registry }}/thoth-${{ matrix.service }}:${{ github.event.inputs.version || github.event.release.tag_name }}
@@ -132,7 +132,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -160,7 +160,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          
+
           # Add all managers to known hosts
           IFS=',' read -ra MANAGERS <<< "${{ steps.swarm-ips.outputs.manager_ips }}"
           for ip in "${MANAGERS[@]}"; do
@@ -184,7 +184,7 @@ jobs:
       - name: Deploy new version (Blue-Green)
         run: |
           VERSION="${{ github.event.inputs.version || github.event.release.tag_name }}"
-          
+
           # Copy deployment files
           scp -i ~/.ssh/deploy_key \
             docker-compose.prod.yml \
@@ -306,7 +306,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    
+
     steps:
       - name: Emergency rollback
         run: |
@@ -322,7 +322,7 @@ jobs:
       - name: Send deployment notification
         run: |
           VERSION="${{ github.event.inputs.version || github.event.release.tag_name }}"
-          
+
           if [ "${{ needs.deploy-blue-green.result }}" == "success" ]; then
             echo "🎉 PRODUCTION DEPLOYMENT SUCCESSFUL"
             echo "Version: $VERSION"
@@ -331,5 +331,5 @@ jobs:
             echo "❌ PRODUCTION DEPLOYMENT FAILED"
             echo "Rollback may have been triggered"
           fi
-          
+
           # Send to Slack/Discord/PagerDuty here

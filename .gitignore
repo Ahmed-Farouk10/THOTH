@@ -22,6 +22,10 @@ pip-delete-this-directory.txt
 .env
 .env.local
 .env.*.local
+.env.dev
+.env.staging
+.env.prod
+!.env.*.template
 
 # Logs
 logs/
@@ -53,6 +57,24 @@ build/
 
 # AWS
 .aws/
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+credentials
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+.terraform/
+.terraform-outputs.json
+
+# SSH Keys
+deploy_key
+deploy_key.pub
 
 # Temporary
 tmp/

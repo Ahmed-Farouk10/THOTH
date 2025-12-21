@@ -11,6 +11,7 @@ GitHub Actions workflows for automated testing, building, and deployment of the 
 **Purpose:** Validate code changes before merging
 
 **Steps:**
+
 - ✅ Build all 10 services (9 microservices + nginx)
 - ✅ Run health checks with test dependencies (PostgreSQL, Kafka)
 - ✅ Lint Dockerfiles with Hadolint
@@ -18,8 +19,9 @@ GitHub Actions workflows for automated testing, building, and deployment of the 
 - ✅ Comment PR with build status
 
 **Services tested:**
+
 - aggregator
-- user-service  
+- user-service
 - document-service
 - notification-service
 - chat-service
@@ -38,6 +40,7 @@ GitHub Actions workflows for automated testing, building, and deployment of the 
 **Purpose:** Continuous deployment to development environment
 
 **Steps:**
+
 1. Build Docker images
 2. Push to Amazon ECR with tags: `dev-latest`, `dev-<commit-sha>`
 3. Deploy to dev Swarm cluster via SSH
@@ -57,6 +60,7 @@ GitHub Actions workflows for automated testing, building, and deployment of the 
 **Purpose:** Pre-production validation with full testing
 
 **Steps:**
+
 1. Run security vulnerability scan (fail on HIGH/CRITICAL)
 2. Build and push images to ECR
 3. Deploy to staging Swarm cluster
@@ -73,13 +77,15 @@ GitHub Actions workflows for automated testing, building, and deployment of the 
 
 ### 4. **CD - Deploy to Production** (`cd-production.yml`)
 
-**Trigger:** 
+**Trigger:**
+
 - Release published
 - Manual workflow dispatch
 
 **Purpose:** Blue-green production deployment with rollback capability
 
 **Steps:**
+
 1. **Manual Approval** - Requires approval via GitHub Environments
 2. **Security Scan** - Comprehensive vulnerability check
 3. **Build & Sign** - Push to ECR and sign with Cosign

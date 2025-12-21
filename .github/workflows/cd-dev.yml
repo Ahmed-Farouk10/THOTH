@@ -15,7 +15,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    
+
     strategy:
       fail-fast: false
       matrix:
@@ -92,7 +92,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -200,6 +200,6 @@ jobs:
             EMOJI="❌"
             MESSAGE="Dev deployment failed"
           fi
-          
+
           echo "$EMOJI $MESSAGE - Commit: ${{ github.sha }}"
           # Add Slack/Discord webhook here if needed

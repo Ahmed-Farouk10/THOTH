@@ -14,7 +14,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    
+
     strategy:
       fail-fast: false
       matrix:
@@ -83,7 +83,7 @@ jobs:
         run: |
           # Start minimal test dependencies
           docker network create test-network || true
-          
+
           # Start PostgreSQL for services that need it
           if [[ "${{ matrix.service.name }}" =~ ^(user-service|document-service|notification-service|chat-service|quiz-service)$ ]]; then
             docker run -d --name test-db \
@@ -96,7 +96,7 @@ jobs:
             # Wait for DB
             sleep 10
           fi
-          
+
           # Start Kafka for event-driven services
           if [[ "${{ matrix.service.name }}" =~ ^(aggregator|document-service|notification-service|chat-service|quiz-service)$ ]]; then
             docker run -d --name test-zookeeper \
@@ -120,10 +120,10 @@ jobs:
         id: run_service
         run: |
           IMAGE_NAME="thoth-${{ matrix.service.name }}:pr-${{ github.event.pull_request.number }}"
-          
+
           # Build environment variables based on service
           ENV_VARS=""
-          
+
           case "${{ matrix.service.name }}" in
             user-service)
               ENV_VARS="-e DATABASE_URL=postgresql://postgres:testpass@test-db:5432/test_db \
@@ -147,19 +147,19 @@ jobs:
                         -e MONGODB_URI=mongodb://localhost:27017/test_db"
               ;;
           esac
-          
+
           docker run -d --name test-${{ matrix.service.name }} \
             --network test-network \
             $ENV_VARS \
             $IMAGE_NAME
-          
+
           echo "Container started, waiting for initialization..."
           sleep 15
 
       - name: Check container health
         run: |
           CONTAINER_NAME="test-${{ matrix.service.name }}"
-          
+
           # Check if container is still running
           if ! docker ps --filter "name=$CONTAINER_NAME" --filter "status=running" | grep -q "$CONTAINER_NAME"; then
             echo "❌ Container crashed!"
@@ -167,9 +167,9 @@ jobs:
             docker logs $CONTAINER_NAME
             exit 1
           fi
-          
+
           echo "✅ Container is running"
-          
+
           # Show recent logs
           echo "=== Recent Logs ==="
           docker logs --tail 50 $CONTAINER_NAME
@@ -179,12 +179,12 @@ jobs:
         run: |
           CONTAINER_NAME="test-${{ matrix.service.name }}"
           PORT="${{ matrix.service.port }}"
-          
+
           # Get container IP
           CONTAINER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $CONTAINER_NAME)
-          
+
           echo "Testing health endpoint at http://$CONTAINER_IP:$PORT/health"
-          
+
           # Try health endpoint (with retries)
           for i in {1..5}; do
             if docker exec $CONTAINER_NAME curl -f http://localhost:$PORT/health 2>/dev/null; then
@@ -241,13 +241,13 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
 
       - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: "trivy-results.sarif"

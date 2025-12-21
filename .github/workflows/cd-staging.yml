@@ -15,7 +15,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    
+
     strategy:
       fail-fast: false
       matrix:
@@ -76,11 +76,11 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: 'fs'
+          scan-type: "fs"
           scan-ref: ${{ steps.service-path.outputs.dockerfile }}
-          format: 'table'
-          exit-code: '1'
-          severity: 'CRITICAL,HIGH'
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -101,7 +101,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
