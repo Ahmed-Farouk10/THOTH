@@ -1,23 +1,30 @@
 # ==============================================================================
+
 # THOTH DEPLOYMENT CHECKLIST
+
 # ==============================================================================
+
 # Complete this checklist before pushing to AWS
+
 # ==============================================================================
 
 ## 📋 PRE-DEPLOYMENT CHECKLIST
 
 ### 1. AWS Account Access
+
 - [ ] Have AWS account credentials (Access Key ID & Secret Access Key)
 - [ ] Have appropriate IAM permissions (EC2, RDS, ECR, VPC, MSK, etc.)
 - [ ] AWS CLI installed and configured: `aws configure`
 - [ ] Terraform installed (v1.5+): `terraform --version`
 
 ### 2. GitHub Setup
+
 - [ ] Repository created on GitHub
 - [ ] Have GitHub Personal Access Token (for Actions)
 - [ ] Team members have repository access
 
 ### 3. API Keys & Credentials
+
 - [ ] Groq API Keys (6 keys recommended for load balancing)
 - [ ] Google Gemini API Key (for AI services)
 - [ ] SSH key pair generated for EC2 access: `ssh-keygen -t rsa -b 4096`
@@ -29,12 +36,14 @@
 ### Step 1: Fill Environment Variables
 
 #### A. Production Environment (`.env.prod`)
+
 ```bash
 cp .env.prod.template .env.prod
 nano .env.prod  # Fill in the values marked with TODO
 ```
 
 **Required values:**
+
 - `AWS_ACCOUNT_ID` - Your 12-digit AWS account ID
 - `AWS_REGION` - e.g., `us-east-1`
 - `GROQ_API_KEY` through `GROQ_API_KEY_6` - Your Groq API keys
@@ -42,12 +51,14 @@ nano .env.prod  # Fill in the values marked with TODO
 - `CHAT_GOOGLE_API_KEY` - Same as above or separate key
 
 #### B. Staging Environment (`.env.staging`)
+
 ```bash
 cp .env.staging.template .env.staging
 nano .env.staging
 ```
 
 #### C. Development Environment (`.env.dev`)
+
 ```bash
 cp .env.dev.template .env.dev
 nano .env.dev
@@ -64,6 +75,7 @@ nano terraform.tfvars
 ```
 
 **Fill in:**
+
 - `aws_region` - Your preferred AWS region
 - `domain_name` - Your domain for the application (if you have one)
 - `ssh_public_key` - Content of your `~/.ssh/id_rsa.pub`
@@ -122,6 +134,7 @@ terraform output -json > ../../../.terraform-outputs.json
 ```
 
 **What gets created:**
+
 - ✅ VPC with public/private subnets across 3 AZs
 - ✅ EC2 instances (3 Swarm managers + 6 workers)
 - ✅ 5 RDS PostgreSQL databases (user, document, notification, quiz, chat)
@@ -259,6 +272,7 @@ curl http://<ALB_DNS_NAME>/notification/health
 ### CloudWatch Logs
 
 All services automatically log to CloudWatch:
+
 - Log Group: `/aws/ecs/thoth/<service-name>`
 - View in AWS Console: CloudWatch > Log groups
 
@@ -280,6 +294,7 @@ docker stack deploy -c docker-compose.monitoring.yml monitoring
 ### Terraform Errors
 
 **Error:** "No valid credential sources"
+
 ```bash
 # Configure AWS CLI
 aws configure
@@ -287,6 +302,7 @@ aws configure
 ```
 
 **Error:** "Insufficient IAM permissions"
+
 ```bash
 # Check IAM policy includes:
 # EC2, RDS, VPC, MSK, ECR, SecretsManager, IAM (for role creation)
@@ -295,6 +311,7 @@ aws configure
 ### Deployment Errors
 
 **Services won't start:**
+
 ```bash
 # Check service logs
 docker service logs thoth_user-service --tail 100
@@ -307,6 +324,7 @@ docker exec <container> ping user-db.<rds-endpoint>
 ```
 
 **Database connection failures:**
+
 ```bash
 # Check security group rules
 aws ec2 describe-security-groups --group-ids <sg-id>
@@ -320,12 +338,14 @@ aws rds describe-db-instances --db-instance-identifier thoth-user-db
 ## 📚 IMPORTANT FILES REFERENCE
 
 ### Configuration Files (Need to fill in)
+
 - [ ] `.env.prod` - Production environment variables
 - [ ] `.env.staging` - Staging environment variables
 - [ ] `.env.dev` - Development environment variables
 - [ ] `terraform/environments/prod/terraform.tfvars` - Infrastructure config
 
 ### Deployment Scripts (Ready to use)
+
 - ✅ `scripts/deploy-swarm.sh` - Deploy stack
 - ✅ `scripts/health-check.sh` - Health monitoring
 - ✅ `scripts/rollback-swarm.sh` - Rollback deployment
@@ -334,6 +354,7 @@ aws rds describe-db-instances --db-instance-identifier thoth-user-db
 - ✅ `scripts/init-swarm.sh` - Initialize Swarm cluster (need to fill)
 
 ### Infrastructure Code (Ready to apply)
+
 - ✅ `terraform/` - Complete AWS infrastructure
 - ✅ `docker-compose.prod.yml` - Production stack definition
 - ✅ `.github/workflows/` - CI/CD pipelines
@@ -370,6 +391,7 @@ aws rds describe-db-instances --db-instance-identifier thoth-user-db
 ## 💰 COST ESTIMATION
 
 ### Production Environment (Monthly)
+
 - EC2 Swarm Cluster (3 managers + 6 workers): ~$450
 - RDS PostgreSQL (5 instances, t3.medium): ~$320
 - MSK Kafka (3 brokers, t3.small): ~$300
@@ -381,6 +403,7 @@ aws rds describe-db-instances --db-instance-identifier thoth-user-db
 - **Total: ~$1,473/month**
 
 ### Development Environment (Monthly)
+
 - EC2 (1 manager + 2 workers): ~$150
 - RDS (smaller instances): ~$80
 - MSK (single broker): ~$100

@@ -43,27 +43,32 @@ aws configure
 ### Initial Setup
 
 1. **Copy terraform.tfvars template:**
+
    ```bash
    cd terraform/environments/prod
    cp terraform.tfvars.example terraform.tfvars
    ```
 
 2. **Edit terraform.tfvars:**
+
    ```bash
    nano terraform.tfvars
    ```
-   
+
    Fill in TODO values:
+
    - `ssh_public_key` - Your SSH public key
    - `github_repo` - Your GitHub repository
    - `domain_name` - Your domain (optional)
 
 3. **Initialize Terraform:**
+
    ```bash
    terraform init
    ```
 
 4. **Plan infrastructure:**
+
    ```bash
    terraform plan -out=tfplan
    ```
@@ -78,11 +83,13 @@ aws configure
 **IMPORTANT:** The module source files are **placeholder templates** and need to be implemented.
 
 ### ✅ Ready
+
 - Main configuration structure
 - Variable definitions
 - Output definitions
 
 ### 🚧 TODO (Need Implementation)
+
 - [ ] `modules/vpc/` - VPC and networking
 - [ ] `modules/security-groups/` - Security group rules
 - [ ] `modules/swarm-cluster/` - EC2 Auto Scaling
@@ -99,6 +106,7 @@ aws configure
 ### Step 1: Create Module Implementations
 
 Each module needs these files:
+
 ```
 modules/MODULE_NAME/
 ├── main.tf       # Main resource definitions
@@ -142,11 +150,13 @@ aws msk list-clusters
 After first successful apply:
 
 1. **Create S3 bucket for state:**
+
    ```bash
    aws s3 mb s3://thoth-terraform-state-prod
    ```
 
 2. **Create DynamoDB table for locking:**
+
    ```bash
    aws dynamodb create-table \
      --table-name thoth-terraform-locks \
@@ -156,6 +166,7 @@ After first successful apply:
    ```
 
 3. **Uncomment backend in main.tf:**
+
    ```hcl
    backend "s3" {
      bucket         = "thoth-terraform-state-prod"
@@ -176,12 +187,13 @@ After first successful apply:
 1. **Never commit secrets:**
    - `.tfvars` files are gitignored
    - Use AWS Secrets Manager for sensitive values
-   
 2. **Use least privilege IAM:**
+
    - Separate roles for different services
    - Use instance profiles, not access keys
 
 3. **Enable encryption:**
+
    - RDS encryption at rest
    - S3 bucket encryption
    - EBS volume encryption
@@ -194,6 +206,7 @@ After first successful apply:
 ## 💰 Cost Optimization
 
 ### Development Environment
+
 ```hcl
 # terraform/environments/dev/terraform.tfvars
 swarm_manager_count = 1      # vs 3 in prod
@@ -204,6 +217,7 @@ docdb_cluster_size = 1       # vs 3 in prod
 ```
 
 ### Staging Environment
+
 ```hcl
 # terraform/environments/staging/terraform.tfvars
 swarm_manager_count = 1

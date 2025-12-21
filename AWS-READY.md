@@ -10,6 +10,7 @@ This project is **deployment-ready**. The only remaining task is filling in AWS-
 ## ✅ What's Complete
 
 ### Infrastructure as Code
+
 - ✅ Docker Swarm production stack (`docker-compose.prod.yml`)
 - ✅ Terraform infrastructure modules (templates ready)
 - ✅ Environment templates (.env.prod.template, .env.staging.template, .env.dev.template)
@@ -18,6 +19,7 @@ This project is **deployment-ready**. The only remaining task is filling in AWS-
 - ✅ Secrets setup script
 
 ### CI/CD Pipelines
+
 - ✅ GitHub Actions workflows (PR checks, dev, staging, production)
 - ✅ Blue-green deployment strategy
 - ✅ Automatic rollback on failure
@@ -25,6 +27,7 @@ This project is **deployment-ready**. The only remaining task is filling in AWS-
 - ✅ Health checks and smoke tests
 
 ### Documentation
+
 - ✅ Deployment guide (DEPLOYMENT.md)
 - ✅ Deployment checklist (DEPLOYMENT-CHECKLIST.md)
 - ✅ CI/CD workflow documentation
@@ -37,6 +40,7 @@ This project is **deployment-ready**. The only remaining task is filling in AWS-
 ### 1. Environment Variables
 
 **Files to create from templates:**
+
 ```bash
 # Copy templates
 cp .env.prod.template .env.prod
@@ -47,15 +51,18 @@ cp .env.dev.template .env.dev
 **Required values in each .env file:**
 
 #### AWS Configuration
+
 - `AWS_ACCOUNT_ID` - Your 12-digit AWS account ID
 - `AWS_REGION` - AWS region (e.g., `us-east-1`)
 
 #### API Keys (from external services)
+
 - `GROQ_API_KEY` through `GROQ_API_KEY_6` - Get from https://console.groq.com/keys
 - `GOOGLE_API_KEY` - Get from https://aistudio.google.com/app/apikey
 - `CHAT_GOOGLE_API_KEY` - Same as above or separate key
 
 #### Infrastructure Endpoints (after Terraform runs)
+
 - `RDS_USER_ENDPOINT`
 - `RDS_DOCUMENT_ENDPOINT`
 - `RDS_NOTIFICATION_ENDPOINT`
@@ -66,6 +73,7 @@ cp .env.dev.template .env.dev
 - `ALB_DNS_NAME`
 
 #### Database Passwords (auto-generated or set manually)
+
 - `USER_DB_PASSWORD`
 - `DOCUMENT_DB_PASSWORD`
 - `NOTIFICATION_DB_PASSWORD`
@@ -75,12 +83,14 @@ cp .env.dev.template .env.dev
 ### 2. Terraform Configuration
 
 **File to create:**
+
 ```bash
 cd terraform/environments/prod
 cp terraform.tfvars.example terraform.tfvars
 ```
 
 **Required values:**
+
 - `ssh_public_key` - Content of your `~/.ssh/id_rsa.pub`
 - `github_repo` - Your GitHub repository (e.g., `username/THOTH`)
 - `domain_name` - Your domain (optional, leave empty if none)
@@ -126,7 +136,7 @@ gh secret set SSH_PRIVATE_KEY < ~/.ssh/id_rsa
 ```bash
 # 1. Copy and fill environment templates
 cp .env.prod.template .env.prod
-cp .env.staging.template .env.staging  
+cp .env.staging.template .env.staging
 cp .env.dev.template .env.dev
 
 # Edit each file - fill in API keys you have now
@@ -218,7 +228,7 @@ git status
 
 # Should NOT see:
 # - .env.prod
-# - .env.staging  
+# - .env.staging
 # - .env.dev
 # - terraform.tfvars
 # - *.pem or *.key files
@@ -229,6 +239,7 @@ git status
 ## 📁 Files Status
 
 ### ✅ Ready to Push
+
 ```
 .github/workflows/          # CI/CD workflows
 docker-compose.prod.yml     # Production stack
@@ -241,6 +252,7 @@ nginx/Dockerfile            # Nginx container
 ```
 
 ### ⚠️ Do NOT Push (gitignored)
+
 ```
 .env.prod                   # Contains secrets
 .env.staging                # Contains secrets
@@ -256,6 +268,7 @@ terraform.tfvars            # Contains SSH keys
 ## 🎯 Next Steps
 
 ### Immediate (Before AWS Access)
+
 1. ✅ Review all code one final time
 2. ✅ Verify no secrets committed
 3. ✅ Push branch to GitHub
@@ -263,6 +276,7 @@ terraform.tfvars            # Contains SSH keys
 5. ✅ Have team review
 
 ### When AWS Access Available
+
 1. Configure AWS CLI
 2. Run Terraform to create infrastructure
 3. Update .env files with Terraform outputs
@@ -277,6 +291,7 @@ terraform.tfvars            # Contains SSH keys
 ## 💡 Tips
 
 ### Testing Without AWS
+
 ```bash
 # You can still test CI locally
 docker-compose up  # Uses localstack for S3, local Kafka
@@ -288,11 +303,13 @@ docker build -f user-service/Dockerfile .
 ```
 
 ### Cost Estimates
+
 - **Dev:** ~$435/month
-- **Staging:** ~$750/month  
+- **Staging:** ~$750/month
 - **Production:** ~$1,473/month
 
 ### Time Estimates
+
 - **Terraform apply:** 15-30 minutes
 - **Swarm initialization:** 5-10 minutes
 - **First deployment:** 10-15 minutes
@@ -303,12 +320,14 @@ docker build -f user-service/Dockerfile .
 ## 🆘 Need Help?
 
 **During setup:**
+
 1. Check DEPLOYMENT-CHECKLIST.md for detailed steps
 2. Check DEPLOYMENT.md for troubleshooting
 3. Check terraform/README.md for Terraform help
 4. Check .github/workflows/README.md for CI/CD help
 
 **Common questions:**
+
 - "What if I don't have a domain?" - Leave `domain_name` empty, use ALB DNS
 - "What if I only have 1 Groq key?" - Use same key for all 6 variables
 - "Can I use smaller instances?" - Yes, edit terraform.tfvars (reduce counts/sizes)
@@ -318,7 +337,8 @@ docker build -f user-service/Dockerfile .
 ## ✅ Ready to Push!
 
 Once you've:
-1. ✅ Filled in API keys you have now (in .env.*.template)
+
+1. ✅ Filled in API keys you have now (in .env.\*.template)
 2. ✅ Reviewed all code
 3. ✅ Verified .gitignore is working
 4. ✅ Run `git status` shows no secrets
