@@ -238,6 +238,7 @@ docker node ls
 ```
 
 Expected output:
+
 ```
 ID                    HOSTNAME   STATUS   AVAILABILITY   MANAGER STATUS
 xxx *                 manager-1  Ready    Active         Leader
