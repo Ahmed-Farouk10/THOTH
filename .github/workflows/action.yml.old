@@ -1,0 +1,127 @@
+name: Build All Services
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    strategy:
+      fail-fast: false # If one service fails, don't cancel the others
+      matrix:
+        service: 
+          - aggregator
+          - documentreader
+          - frontend
+          - notification-service
+          - platform
+          - stt-service
+          - tts-service
+          - user-service
+          - nginx
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Define naming convention: ghcr.io/owner/repo/service-name
+      # We sanitize the repo name to ensure it is lowercase
+      - name: Lowercase Repo Name
+        run: |
+          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.REPO_LC }}/${{ matrix.service }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            latest
+
+      # 1. BUILD AND LOAD
+      # Note: 'context: .' sets the build context to the repo root.
+      # 'file: ./${{ matrix.service }}/Dockerfile' points to the specific service Dockerfile.
+      - name: Build and Load
+        uses: docker/build-push-action@v5
+        with:
+          context: . 
+          file: ./${{ matrix.service }}/Dockerfile
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # 2. RUN AND WAIT
+      - name: Start container and wait for health check
+        run: |
+          # Construct the full image name for the specific SHA tag
+          TEST_TAG=${{ env.REGISTRY }}/${{ env.REPO_LC }}/${{ matrix.service }}:sha-$(git rev-parse --short HEAD)
+          
+          echo "Starting ${{ matrix.service }} for testing..."
+          
+          # We use --env-file if you have a .env.example, or pass dummy vars if needed
+          # Adding --rm so it cleans up after itself if we stop it manually, 
+          # but we name it so we can inspect it.
+          docker run -d --name test-${{ matrix.service }} $TEST_TAG
+          
+          echo "Waiting 10 seconds for initialization..."
+          sleep 10
+
+      # 3. VERIFY HEALTH
+      - name: Verify Container Health
+        run: |
+          CONTAINER_NAME="test-${{ matrix.service }}"
+
+          # Check if process is still running
+          IS_RUNNING=$(docker inspect -f '{{.State.Running}}' $CONTAINER_NAME)
+          
+          if [ "$IS_RUNNING" = "false" ]; then
+            echo "::error::Service ${{ matrix.service }} crashed immediately!"
+            echo "--- Docker Logs ---"
+            docker logs $CONTAINER_NAME
+            exit 1
+          fi
+
+          # Optional: Check standard Docker HEALTHCHECK status
+          # HEALTH=$(docker inspect -f '{{.State.Health.Status}}' $CONTAINER_NAME)
+          # if [ "$HEALTH" != "healthy" ] && [ "$HEALTH" != "<nil>" ]; then
+          #    echo "::error::Service ${{ matrix.service }} failed healthcheck: $HEALTH"
+          #    docker logs $CONTAINER_NAME
+          #    exit 1
+          # fi
+
+          echo "Service ${{ matrix.service }} looks healthy."
+          docker stop $CONTAINER_NAME
+          docker rm $CONTAINER_NAME
+
+      # 4. PUSH
+      # Re-run build-push action but with push: true. 
+      # Since layers are cached from step 1, this is fast.
+      - name: Push image to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

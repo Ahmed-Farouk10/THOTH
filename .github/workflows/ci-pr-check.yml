@@ -1,0 +1,253 @@
+name: CI - Pull Request Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: aggregator
+            context: .
+            dockerfile: aggregator/Dockerfile
+            port: 8080
+          - name: user-service
+            context: .
+            dockerfile: user-service/Dockerfile
+            port: 8000
+          - name: document-service
+            context: .
+            dockerfile: documentreader/Dockerfile
+            port: 8000
+          - name: notification-service
+            context: .
+            dockerfile: notification-service/Dockerfile
+            port: 8003
+          - name: chat-service
+            context: .
+            dockerfile: platform/chat-service/Dockerfile
+            port: 8005
+          - name: quiz-service
+            context: .
+            dockerfile: platform/quiz-service/Dockerfile
+            port: 8004
+          - name: tts-service
+            context: .
+            dockerfile: tts-service/Dockerfile
+            port: 8006
+          - name: stt-service
+            context: .
+            dockerfile: stt-service/Dockerfile
+            port: 8007
+          - name: frontend
+            context: frontend
+            dockerfile: frontend/Dockerfile
+            port: 3000
+          - name: nginx
+            context: .
+            dockerfile: nginx/Dockerfile
+            port: 80
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: false
+          load: true
+          tags: thoth-${{ matrix.service.name }}:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start test dependencies
+        if: matrix.service.name != 'nginx' && matrix.service.name != 'frontend'
+        run: |
+          # Start minimal test dependencies
+          docker network create test-network || true
+
+          # Start PostgreSQL for services that need it
+          if [[ "${{ matrix.service.name }}" =~ ^(user-service|document-service|notification-service|chat-service|quiz-service)$ ]]; then
+            docker run -d --name test-db \
+              --network test-network \
+              -e POSTGRES_DB=test_db \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_PASSWORD=testpass \
+              postgres:15
+            
+            # Wait for DB
+            sleep 10
+          fi
+
+          # Start Kafka for event-driven services
+          if [[ "${{ matrix.service.name }}" =~ ^(aggregator|document-service|notification-service|chat-service|quiz-service)$ ]]; then
+            docker run -d --name test-zookeeper \
+              --network test-network \
+              -e ZOOKEEPER_CLIENT_PORT=2181 \
+              confluentinc/cp-zookeeper:7.4.0
+            
+            sleep 5
+            
+            docker run -d --name test-kafka \
+              --network test-network \
+              -e KAFKA_ZOOKEEPER_CONNECT=test-zookeeper:2181 \
+              -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://test-kafka:9092 \
+              -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+              confluentinc/cp-kafka:7.4.0
+            
+            sleep 10
+          fi
+
+      - name: Run service container
+        id: run_service
+        run: |
+          IMAGE_NAME="thoth-${{ matrix.service.name }}:pr-${{ github.event.pull_request.number }}"
+
+          # Build environment variables based on service
+          ENV_VARS=""
+
+          case "${{ matrix.service.name }}" in
+            user-service)
+              ENV_VARS="-e DATABASE_URL=postgresql://postgres:testpass@test-db:5432/test_db \
+                        -e JWT_SECRET=test-secret \
+                        -e KAFKA_BROKERS=test-kafka:9092"
+              ;;
+            document-service|notification-service|chat-service|quiz-service)
+              ENV_VARS="-e DATABASE_URL=postgresql://postgres:testpass@test-db:5432/test_db \
+                        -e KAFKA_BOOTSTRAP_SERVERS=test-kafka:9092 \
+                        -e JWT_SECRET=test-secret \
+                        -e AWS_ACCESS_KEY_ID=test \
+                        -e AWS_SECRET_ACCESS_KEY=test"
+              ;;
+            aggregator)
+              ENV_VARS="-e KAFKA_BROKERS=test-kafka:9092 \
+                        -e JWT_SECRET=test-secret \
+                        -e USER_SERVICE_URL=http://localhost:8000"
+              ;;
+            tts-service|stt-service)
+              ENV_VARS="-e NODE_ENV=test \
+                        -e MONGODB_URI=mongodb://localhost:27017/test_db"
+              ;;
+          esac
+
+          docker run -d --name test-${{ matrix.service.name }} \
+            --network test-network \
+            $ENV_VARS \
+            $IMAGE_NAME
+
+          echo "Container started, waiting for initialization..."
+          sleep 15
+
+      - name: Check container health
+        run: |
+          CONTAINER_NAME="test-${{ matrix.service.name }}"
+
+          # Check if container is still running
+          if ! docker ps --filter "name=$CONTAINER_NAME" --filter "status=running" | grep -q "$CONTAINER_NAME"; then
+            echo "❌ Container crashed!"
+            echo "=== Container Logs ==="
+            docker logs $CONTAINER_NAME
+            exit 1
+          fi
+
+          echo "✅ Container is running"
+
+          # Show recent logs
+          echo "=== Recent Logs ==="
+          docker logs --tail 50 $CONTAINER_NAME
+
+      - name: Run health check endpoint
+        if: matrix.service.name != 'nginx'
+        run: |
+          CONTAINER_NAME="test-${{ matrix.service.name }}"
+          PORT="${{ matrix.service.port }}"
+
+          # Get container IP
+          CONTAINER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $CONTAINER_NAME)
+
+          echo "Testing health endpoint at http://$CONTAINER_IP:$PORT/health"
+
+          # Try health endpoint (with retries)
+          for i in {1..5}; do
+            if docker exec $CONTAINER_NAME curl -f http://localhost:$PORT/health 2>/dev/null; then
+              echo "✅ Health check passed!"
+              break
+            fi
+            
+            if [ $i -eq 5 ]; then
+              echo "❌ Health check failed after 5 attempts"
+              docker logs $CONTAINER_NAME
+              exit 1
+            fi
+            
+            echo "Retry $i/5..."
+            sleep 3
+          done
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop test-${{ matrix.service.name }} || true
+          docker rm test-${{ matrix.service.name }} || true
+          docker stop test-kafka test-zookeeper test-db || true
+          docker rm test-kafka test-zookeeper test-db || true
+          docker network rm test-network || true
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? '✅' : '❌';
+            const service = '${{ matrix.service.name }}';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${status} **${service}** build and test completed.`
+            });
+
+  lint-and-security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Hadolint (Dockerfile linter)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: "*/Dockerfile"
+          recursive: true
+          failure-threshold: warning
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"

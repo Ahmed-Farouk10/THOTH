@@ -1,0 +1,205 @@
+name: CD - Deploy to Dev
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT: dev
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - aggregator
+          - user-service
+          - document-service
+          - notification-service
+          - chat-service
+          - quiz-service
+          - tts-service
+          - stt-service
+          - frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine service path
+        id: service-path
+        run: |
+          case "${{ matrix.service }}" in
+            chat-service)
+              echo "dockerfile=platform/chat-service/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=." >> $GITHUB_OUTPUT
+              ;;
+            quiz-service)
+              echo "dockerfile=platform/quiz-service/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=." >> $GITHUB_OUTPUT
+              ;;
+            document-service)
+              echo "dockerfile=documentreader/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=." >> $GITHUB_OUTPUT
+              ;;
+            frontend)
+              echo "dockerfile=frontend/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=frontend" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "dockerfile=${{ matrix.service }}/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=." >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ steps.service-path.outputs.context }}
+          file: ${{ steps.service-path.outputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/thoth-${{ matrix.service }}:dev-latest
+            ${{ steps.login-ecr.outputs.registry }}/thoth-${{ matrix.service }}:dev-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  deploy-to-swarm:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Swarm manager IP
+        id: swarm-ip
+        run: |
+          MANAGER_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=dev" \
+                      "Name=tag:Role,Values=swarm-manager" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+            --output text)
+          echo "manager_ip=$MANAGER_IP" >> $GITHUB_OUTPUT
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ steps.swarm-ip.outputs.manager_ip }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Docker Swarm
+        run: |
+          # Copy deployment files to manager
+          scp -i ~/.ssh/deploy_key \
+            docker-compose.prod.yml \
+            .env.dev \
+            ec2-user@${{ steps.swarm-ip.outputs.manager_ip }}:/tmp/
+
+          # Deploy stack
+          ssh -i ~/.ssh/deploy_key ec2-user@${{ steps.swarm-ip.outputs.manager_ip }} << 'EOF'
+            cd /tmp
+            
+            # Load environment variables
+            set -a
+            source .env.dev
+            set +a
+            
+            # Set image tag
+            export IMAGE_TAG=dev-${{ github.sha }}
+            
+            # Deploy stack
+            docker stack deploy \
+              --compose-file docker-compose.prod.yml \
+              --with-registry-auth \
+              thoth-dev
+            
+            echo "✅ Deployment initiated"
+            
+            # Wait and check status
+            sleep 30
+            docker stack services thoth-dev
+          EOF
+
+      - name: Health check
+        run: |
+          ssh -i ~/.ssh/deploy_key ec2-user@${{ steps.swarm-ip.outputs.manager_ip }} << 'EOF'
+            echo "Checking service health..."
+            
+            UNHEALTHY=0
+            for service in $(docker service ls --filter "label=com.docker.stack.namespace=thoth-dev" --format "{{.Name}}"); do
+              REPLICAS=$(docker service ls --filter "name=$service" --format "{{.Replicas}}")
+              RUNNING=$(echo $REPLICAS | cut -d'/' -f1)
+              DESIRED=$(echo $REPLICAS | cut -d'/' -f2)
+              
+              if [ "$RUNNING" != "$DESIRED" ]; then
+                echo "❌ $service: $REPLICAS"
+                UNHEALTHY=$((UNHEALTHY + 1))
+              else
+                echo "✅ $service: $REPLICAS"
+              fi
+            done
+            
+            if [ $UNHEALTHY -gt 0 ]; then
+              echo "⚠️ $UNHEALTHY services are not fully healthy yet"
+              exit 1
+            fi
+            
+            echo "✅ All services healthy!"
+          EOF
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+  notify:
+    needs: deploy-to-swarm
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send notification
+        run: |
+          STATUS="${{ needs.deploy-to-swarm.result }}"
+          if [ "$STATUS" == "success" ]; then
+            EMOJI="✅"
+            MESSAGE="Dev deployment successful"
+          else
+            EMOJI="❌"
+            MESSAGE="Dev deployment failed"
+          fi
+
+          echo "$EMOJI $MESSAGE - Commit: ${{ github.sha }}"
+          # Add Slack/Discord webhook here if needed

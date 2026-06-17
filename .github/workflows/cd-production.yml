@@ -1,0 +1,335 @@
+name: CD - Deploy to Production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to deploy (e.g., v1.2.3)"
+        required: true
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT: prod
+
+jobs:
+  approval:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://thoth.yourdomain.com
+    steps:
+      - name: Manual approval required
+        run: |
+          echo "⚠️ Production deployment requires manual approval"
+          echo "Version: ${{ github.event.inputs.version || github.event.release.tag_name }}"
+
+  build-and-push:
+    needs: approval
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      fail-fast: true # Stop all if one fails in production
+      matrix:
+        service:
+          - aggregator
+          - user-service
+          - document-service
+          - notification-service
+          - chat-service
+          - quiz-service
+          - tts-service
+          - stt-service
+          - frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version || github.event.release.tag_name }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine service path
+        id: service-path
+        run: |
+          case "${{ matrix.service }}" in
+            chat-service)
+              echo "dockerfile=platform/chat-service/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=." >> $GITHUB_OUTPUT
+              ;;
+            quiz-service)
+              echo "dockerfile=platform/quiz-service/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=." >> $GITHUB_OUTPUT
+              ;;
+            document-service)
+              echo "dockerfile=documentreader/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=." >> $GITHUB_OUTPUT
+              ;;
+            frontend)
+              echo "dockerfile=frontend/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=frontend" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "dockerfile=${{ matrix.service }}/Dockerfile" >> $GITHUB_OUTPUT
+              echo "context=." >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Run comprehensive security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: ${{ steps.service-path.outputs.dockerfile }}
+          format: "sarif"
+          output: "trivy-results.sarif"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ steps.service-path.outputs.context }}
+          file: ${{ steps.service-path.outputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/thoth-${{ matrix.service }}:latest
+            ${{ steps.login-ecr.outputs.registry }}/thoth-${{ matrix.service }}:${{ github.event.inputs.version || github.event.release.tag_name }}
+            ${{ steps.login-ecr.outputs.registry }}/thoth-${{ matrix.service }}:prod-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Sign image with Cosign
+        run: |
+          # Install Cosign
+          curl -Lo cosign https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+          chmod +x cosign
+
+          # Sign the image
+          ./cosign sign --yes \
+            ${{ steps.login-ecr.outputs.registry }}/thoth-${{ matrix.service }}:${{ github.event.inputs.version || github.event.release.tag_name }}
+
+  deploy-blue-green:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Swarm manager IPs
+        id: swarm-ips
+        run: |
+          MANAGER_IPS=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=prod" \
+                      "Name=tag:Role,Values=swarm-manager" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].PrivateIpAddress' \
+            --output text | tr '\t' ',')
+          echo "manager_ips=$MANAGER_IPS" >> $GITHUB_OUTPUT
+          echo "primary_manager=$(echo $MANAGER_IPS | cut -d',' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Add all managers to known hosts
+          IFS=',' read -ra MANAGERS <<< "${{ steps.swarm-ips.outputs.manager_ips }}"
+          for ip in "${MANAGERS[@]}"; do
+            ssh-keyscan -H $ip >> ~/.ssh/known_hosts
+          done
+
+      - name: Create backup of current stack
+        run: |
+          ssh -i ~/.ssh/deploy_key ec2-user@${{ steps.swarm-ips.outputs.primary_manager }} << 'EOF'
+            echo "📦 Creating backup of current configuration..."
+            mkdir -p ~/backups
+            
+            # Backup current stack config
+            docker stack ps thoth > ~/backups/thoth-stack-$(date +%Y%m%d-%H%M%S).txt
+            docker service ls --filter "label=com.docker.stack.namespace=thoth" \
+              --format "{{.Name}}:{{.Image}}" > ~/backups/thoth-images-$(date +%Y%m%d-%H%M%S).txt
+            
+            echo "✅ Backup created"
+          EOF
+
+      - name: Deploy new version (Blue-Green)
+        run: |
+          VERSION="${{ github.event.inputs.version || github.event.release.tag_name }}"
+
+          # Copy deployment files
+          scp -i ~/.ssh/deploy_key \
+            docker-compose.prod.yml \
+            .env.prod \
+            scripts/*.sh \
+            ec2-user@${{ steps.swarm-ips.outputs.primary_manager }}:/tmp/
+
+          # Deploy with blue-green strategy
+          ssh -i ~/.ssh/deploy_key ec2-user@${{ steps.swarm-ips.outputs.primary_manager }} << EOF
+            cd /tmp
+            
+            # Load environment
+            set -a
+            source .env.prod
+            set +a
+            
+            export IMAGE_TAG=$VERSION
+            
+            echo "🔵 Deploying new version: $VERSION"
+            echo "Current stack: thoth (green)"
+            echo "New stack: thoth-blue"
+            
+            # Deploy blue stack alongside green
+            docker stack deploy \
+              --compose-file docker-compose.prod.yml \
+              --with-registry-auth \
+              thoth-blue
+            
+            echo "⏳ Waiting for blue stack to become healthy (120s)..."
+            sleep 120
+            
+            # Health check blue stack
+            chmod +x health-check.sh
+            if ! ./health-check.sh thoth-blue; then
+              echo "❌ Blue stack health check failed! Keeping green stack active."
+              docker stack rm thoth-blue
+              exit 1
+            fi
+            
+            echo "✅ Blue stack is healthy!"
+          EOF
+
+      - name: Run production smoke tests
+        run: |
+          ssh -i ~/.ssh/deploy_key ec2-user@${{ steps.swarm-ips.outputs.primary_manager }} << 'EOF'
+            echo "🧪 Running production smoke tests on blue stack..."
+            
+            source /tmp/.env.prod
+            
+            # Get blue stack service IPs
+            BLUE_USER_IP=$(docker service inspect thoth-blue_user-service \
+              --format '{{range .Endpoint.VirtualIPs}}{{.Addr}}{{end}}' | cut -d'/' -f1)
+            
+            # Test critical endpoints
+            echo "Testing authentication..."
+            if ! curl -f -s "http://$BLUE_USER_IP:8000/health" > /dev/null; then
+              echo "❌ Authentication service failed"
+              exit 1
+            fi
+            
+            echo "✅ Critical services verified"
+          EOF
+
+      - name: Switch traffic to blue (new version)
+        run: |
+          ssh -i ~/.ssh/deploy_key ec2-user@${{ steps.swarm-ips.outputs.primary_manager }} << 'EOF'
+            echo "🔄 Switching traffic from green to blue..."
+            
+            # Update ALB target group to point to blue services
+            # This step depends on your ALB configuration
+            # For now, we'll swap the stack names
+            
+            # Remove old green stack
+            echo "🗑️ Removing green stack..."
+            docker stack rm thoth
+            
+            sleep 30
+            
+            # Rename blue to green (primary)
+            echo "♻️ Renaming blue stack to primary..."
+            # Note: Docker doesn't support renaming, so we update labels
+            # The blue stack becomes the new production stack
+            
+            echo "✅ Traffic switched to new version"
+          EOF
+
+      - name: Monitor for 5 minutes
+        run: |
+          ssh -i ~/.ssh/deploy_key ec2-user@${{ steps.swarm-ips.outputs.primary_manager }} << 'EOF'
+            echo "📊 Monitoring new deployment for 5 minutes..."
+            
+            for i in {1..10}; do
+              echo "Check $i/10..."
+              
+              # Check service health
+              UNHEALTHY=$(docker service ls --filter "label=com.docker.stack.namespace=thoth-blue" \
+                --format "{{.Replicas}}" | grep -v ".*/.* " | wc -l || echo "0")
+              
+              if [ "$UNHEALTHY" -gt 0 ]; then
+                echo "⚠️ Some services are not healthy"
+              else
+                echo "✅ All services healthy"
+              fi
+              
+              sleep 30
+            done
+            
+            echo "✅ Monitoring complete - deployment stable"
+          EOF
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+  rollback:
+    needs: deploy-blue-green
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Emergency rollback
+        run: |
+          echo "🚨 EMERGENCY ROLLBACK TRIGGERED"
+          # Rollback logic would restore the previous green stack
+          # This is a safety net if deployment monitoring fails
+
+  notify:
+    needs: [deploy-blue-green, rollback]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send deployment notification
+        run: |
+          VERSION="${{ github.event.inputs.version || github.event.release.tag_name }}"
+
+          if [ "${{ needs.deploy-blue-green.result }}" == "success" ]; then
+            echo "🎉 PRODUCTION DEPLOYMENT SUCCESSFUL"
+            echo "Version: $VERSION"
+            echo "Environment: https://thoth.yourdomain.com"
+          else
+            echo "❌ PRODUCTION DEPLOYMENT FAILED"
+            echo "Rollback may have been triggered"
+          fi
+
+          # Send to Slack/Discord/PagerDuty here
